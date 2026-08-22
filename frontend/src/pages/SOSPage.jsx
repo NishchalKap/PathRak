@@ -1,317 +1,115 @@
-import { useState, useEffect } from "react";
-import { MapContainer, TileLayer, Popup, Circle, useMap } from "react-leaflet";
-import { triggerSOS, getSOSLog, getNearestStation, getNearestHelper } from "../api";
+import { useEffect, useState } from "react";
+import { Circle, MapContainer, Popup, TileLayer, useMap } from "react-leaflet";
+import { getNearestHelper, getNearestStation, getSOSLog, triggerSOS } from "../api";
+import Icon from "../components/Icon";
+import { LocationStatus, Notice, PageHeader, StatusPill } from "../components/UI";
 import "leaflet/dist/leaflet.css";
 
 const MAP_PLACEHOLDER = [20, 0];
 
-// ── This component re-centers the map whenever `pos` changes ─────────────────
-function RecenterMap({ pos }) {
+function RecenterMap({ position }) {
   const map = useMap();
-  useEffect(() => {
-    map.setView(pos, map.getZoom());
-  }, [pos]);
+  useEffect(() => { map.setView(position, map.getZoom()); }, [map, position]);
   return null;
 }
 
 export default function SOSPage({ userInfo, onEditProfile, currentPos, locationError }) {
-  const pos = currentPos;
-  const [msg,           setMsg]           = useState("");
-  const [result,        setResult]        = useState(null);
-  const [log,           setLog]           = useState([]);
-  const [station,       setStation]       = useState(null);
-  const [stations,      setStations]      = useState([]);
-  const [sending,       setSending]       = useState(false);
-  const [error,         setError]         = useState("");
-  const [helpers,       setHelpers]       = useState([]);
-  // ── Load nearest station whenever position changes ────────────────────────
+  const [message, setMessage] = useState("");
+  const [result, setResult] = useState(null);
+  const [recentAlerts, setRecentAlerts] = useState([]);
+  const [station, setStation] = useState(null);
+  const [stations, setStations] = useState([]);
+  const [helper, setHelper] = useState(null);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const [confirming, setConfirming] = useState(false);
+
   useEffect(() => {
-    if (!pos) return;
-    getNearestStation(pos[0], pos[1])
-      .then((data) => {
-        setStation(data.nearest_station || null);
-        setStations(data.stations || []);
-      })
-      .catch(() => {});
-  }, [pos]);
+    if (!currentPos) {
+      setStation(null);
+      setStations([]);
+      setHelper(null);
+      return;
+    }
+    getNearestStation(currentPos[0], currentPos[1]).then((data) => { setStation(data.nearest_station || null); setStations(data.stations || []); }).catch(() => { setStation(null); setStations([]); });
+    getNearestHelper(currentPos[0], currentPos[1], userInfo?.user_id).then((data) => setHelper(data.nearest_helper || null)).catch(() => setHelper(null));
+  }, [currentPos, userInfo?.user_id]);
 
-  // ── Load nearest helpers ──────────────────────────────────────────────────
   useEffect(() => {
-    if (!pos) return;
-    getNearestHelper(pos[0], pos[1], userInfo?.user_id)
-      .then((data) => setHelpers(data.nearest_helper ? [data.nearest_helper] : []))
-      .catch(() => setHelpers([]));
-  }, [pos, userInfo]);
+    getSOSLog().then((data) => setRecentAlerts(data.alerts || [])).catch(() => setRecentAlerts([]));
+  }, [result]);
 
-  // ── Load SOS log ──────────────────────────────────────────────────────────
-  const fetchLog = async () => {
-    try {
-      const d = await getSOSLog();
-      setLog(d.alerts || []);
-    } catch {}
-  };
-  useEffect(() => { fetchLog(); }, [result]);
-
-  const handleSOS = async () => {
+  const openConfirmation = () => {
     if (!userInfo?.name?.trim()) {
-      setError("Please complete your profile first.");
+      setError("Complete your emergency profile before recording an SOS alert.");
       return;
     }
-    if (!pos) {
-      setError("Live GPS is required. No fallback location will be sent.");
+    if (!currentPos) {
+      setError("Live location is required. PathRak will not submit a fallback location.");
       return;
     }
+    setError("");
+    setConfirming(true);
+  };
+
+  const recordAlert = async () => {
+    setConfirming(false);
     setSending(true);
     setError("");
     setResult(null);
     try {
-      if (!navigator.onLine) throw new Error("Offline");
-      const data = await triggerSOS(
-        pos[0],
-        pos[1],
-        userInfo.user_id,
-        userInfo.name,
-        msg,
-        userInfo.emergency_contact,
-        userInfo.medical_details,
-      );
-      setResult(data);
-      if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 500]);
-
-      // Automatically notify the nearest helper for the demo
-      if (data.nearest_helper) {
-        const sendNotif = () => {
-          new Notification("🚨 Emergency Alert Received!", {
-            body: `Someone near you needs help! (Demo notification to ${data.nearest_helper.name})`,
-            icon: "/favicon.ico",
-          });
-        };
-        if ("Notification" in window && Notification.permission === "granted") {
-          sendNotif();
-        } else if ("Notification" in window && Notification.permission !== "denied") {
-          Notification.requestPermission().then(p => p === "granted" && sendNotif());
-        }
+      if (!navigator.onLine) throw new Error("The device is offline");
+      const alert = await triggerSOS(currentPos[0], currentPos[1], userInfo.user_id, userInfo.name, message.trim(), userInfo.emergency_contact, userInfo.medical_details);
+      setResult(alert);
+      navigator.vibrate?.([200, 100, 200, 100, 500]);
+      if (alert.nearest_helper && "Notification" in window && Notification.permission === "granted") {
+        new Notification("Nearby emergency alert", { body: `A PathRak user near ${alert.nearest_helper.name} needs help.`, icon: "/favicon.ico" });
       }
-
-    } catch (sosError) {
-      setError(`${sosError.message}. Opening the SMS composer; you must confirm sending.`);
-      if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
-      
-      const mapsLink = `https://maps.google.com/?q=${pos[0]},${pos[1]}`;
-      const smsBody = encodeURIComponent(`SOS! I am in danger. My live location: ${mapsLink}`);
-      const phone = userInfo.emergency_contact || "";
-      window.location.href = `sms:${phone}?body=${smsBody}`;
+    } catch (recordError) {
+      setError(`${recordError.message}. PathRak is opening an SMS draft; sending still requires your confirmation.`);
+      navigator.vibrate?.([500, 200, 500]);
+      const mapsLink = `https://maps.google.com/?q=${currentPos[0]},${currentPos[1]}`;
+      window.location.href = `sms:${userInfo.emergency_contact || ""}?body=${encodeURIComponent(`SOS! I need help. My live location: ${mapsLink}`)}`;
     } finally {
       setSending(false);
     }
   };
 
+  const dispatchConfigured = result?.police_dispatch && !["NOT_CONFIGURED", "Unavailable"].includes(result.police_dispatch);
+
   return (
-    <div className="flex flex-col gap-4 h-full">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-white">SOS Emergency Alert</h1>
-        <p className="text-sm text-slate-600 dark:text-slate-400">Records your live location and notifies your emergency contact when a provider is configured.</p>
-      </div>
+    <div className="page-stack sos-page">
+      <PageHeader eyebrow="Emergency action" title="SOS" description="Record an emergency alert with your current location and saved profile. Review readiness before activating." actions={<StatusPill tone={result ? "danger" : currentPos && userInfo ? "success" : "warning"} icon={result ? "sos" : currentPos && userInfo ? "check" : "warning"}>{result ? "Alert recorded" : currentPos && userInfo ? "Ready to activate" : "Setup incomplete"}</StatusPill>} />
 
-      {/* Location status banner */}
-      <div className={`px-4 py-2 rounded-lg text-sm flex items-center gap-2 ${
-        !pos
-          ? "bg-yellow-900/40 border border-yellow-500/40 text-yellow-300"
-          : "bg-emerald-900/30 border border-emerald-500/30 text-emerald-300"
-      }`}>
-        <span>{!pos ? "⚠️" : "📍"}</span>
-        <span>{locationError || (pos ? "Live GPS available" : "Waiting for live GPS. No default location is used.")}</span>
-      </div>
+      {error && <Notice tone="danger" title="SOS could not complete" role="alert">{error}</Notice>}
+      {result && <Notice tone={dispatchConfigured ? "success" : "warning"} title="Emergency alert recorded">{dispatchConfigured ? "The configured dispatch provider accepted this alert." : "External dispatch is not configured. The alert is recorded in PathRak; review contact notification status below."}</Notice>}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1">
-        {/* Left — SOS form */}
-        <div className="flex flex-col gap-4">
-          {station && (
-            <div className="bg-blue-900/30 border border-blue-500/40 rounded-xl p-4">
-              <p className="text-xs text-blue-400 font-semibold mb-1">NEAREST DEMO STATION REFERENCE</p>
-              <p className="text-slate-800 dark:text-white font-semibold">{station.name}</p>
-              <p className="text-slate-600 dark:text-slate-400 text-sm">{station.distance_km} km away · {station.contact}</p>
-            </div>
-          )}
+      <section className="sos-hero">
+        <div className="sos-copy"><span className="sos-symbol"><Icon name="sos" size={29} /></span><div><h2>{result ? "Alert recorded" : "Need immediate help?"}</h2><p>{result ? `Reference ${result.alert_id}` : "This action sends your saved emergency context and exact live coordinates to the PathRak backend."}</p></div></div>
+        <button className="sos-trigger" disabled={sending || !currentPos || !userInfo || Boolean(result)} onClick={openConfirmation}><Icon name="sos" size={23} />{sending ? "Recording alert..." : result ? "SOS recorded" : "Prepare SOS alert"}</button>
+      </section>
 
-          {stations.length > 0 && (
-            <div className="bg-blue-900/20 border border-blue-500/30 rounded-xl p-4">
-              <p className="text-xs text-blue-300 font-semibold mb-3">DEMO STATION REFERENCES</p>
-              <div className="space-y-3 max-h-64 overflow-y-auto">
-                {stations.map((s, i) => (
-                  <div key={s.id || i} className="rounded-xl bg-white/40 dark:bg-slate-900/60 p-3 border border-black/10 dark:border-slate-700">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold text-slate-800 dark:text-white">{s.name}</p>
-                      <span className="text-xs text-slate-600 dark:text-slate-400">{s.distance_km} km</span>
-                    </div>
-                    <p className="text-slate-600 dark:text-slate-400 text-xs mt-1">{s.contact}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+      <div className="sos-layout">
+        <div className="sos-primary">
+          <section className="panel sos-readiness">
+            <div className="section-heading compact"><div><p className="eyebrow">Before activation</p><h2>Emergency readiness</h2></div></div>
+            <LocationStatus currentPos={currentPos} error={locationError} />
+            <div className="readiness-row"><span className={userInfo ? "ready-dot" : "warning-dot"} /><span><strong>{userInfo ? "Emergency profile ready" : "Emergency profile missing"}</strong><small>{userInfo ? `${userInfo.name} · ${userInfo.emergency_contact}` : "Name and contact are required"}</small></span><button className="text-button" onClick={onEditProfile}>{userInfo ? "Edit" : "Set up"}<Icon name="chevron" size={14} /></button></div>
+            <div className="field"><label htmlFor="sos-message">Situation note <span className="optional-label">Optional</span></label><textarea id="sos-message" className="input" value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Briefly describe what is happening" rows="3" /></div>
+          </section>
 
-          {helpers.length > 0 && (
-            <div className="bg-green-900/30 border border-green-500/40 rounded-xl p-4">
-              <p className="text-xs text-green-400 font-semibold mb-1">NEARBY HELPERS ({helpers.length})</p>
-              {helpers.map((helper, i) => (
-                <div key={i} className="text-slate-800 dark:text-white text-sm">
-                  <p className="font-semibold">{helper.name}</p>
-                  <p className="text-slate-600 dark:text-slate-400">{helper.distance_km} km away</p>
-                </div>
-              ))}
-            </div>
-          )}
+          {result && <section className="panel result-panel" aria-live="polite"><div className="panel-heading"><span className="panel-icon danger-icon"><Icon name="sos" /></span><div><h2>Recorded alert details</h2><p>These values come directly from the backend response.</p></div></div><dl className="result-list"><div><dt>Alert ID</dt><dd>{result.alert_id}</dd></div><div><dt>Station reference</dt><dd>{result.nearest_station?.name || "Unavailable"}</dd></div><div><dt>External dispatch</dt><dd>{result.police_dispatch || "Not configured"}</dd></div><div><dt>Contact notification</dt><dd>{result.emergency_contact_notification || "Not configured"}</dd></div><div><dt>Data mode</dt><dd>{result.data_mode || "Unknown"}</dd></div></dl>{result.live_location_url && <a className="btn btn-secondary" href={result.live_location_url} target="_blank" rel="noreferrer">Open location link</a>}</section>}
 
-          <div className="bg-white/60 dark:bg-slate-800/60 rounded-xl p-5 border border-black/10 dark:border-slate-700 flex flex-col gap-4">
-            {userInfo ? (
-              <div className="space-y-4">
-                <div className="rounded-xl bg-white/40 dark:bg-slate-900/50 p-4 border border-black/10 dark:border-slate-700">
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Using saved profile</p>
-                  <p className="text-sm text-slate-800 dark:text-white mt-3">Name: <span className="text-slate-700 dark:text-slate-300">{userInfo.name}</span></p>
-                  <p className="text-sm text-slate-800 dark:text-white">Emergency contact: <span className="text-slate-700 dark:text-slate-300">{userInfo.emergency_contact}</span></p>
-                  <p className="text-sm text-slate-800 dark:text-white">Medical details: <span className="text-slate-700 dark:text-slate-300">{userInfo.medical_details || "None"}</span></p>
-                </div>
-                <button
-                  type="button"
-                  onClick={onEditProfile}
-                  className="w-full py-3 rounded-xl border border-black/20 dark:border-slate-600 text-slate-800 dark:text-slate-200 text-sm hover:bg-slate-200 dark:bg-slate-700 transition"
-                >
-                  Edit saved profile
-                </button>
-              </div>
-            ) : (
-              <div className="rounded-xl bg-yellow-900/30 border border-yellow-500/30 p-4 text-sm text-slate-800 dark:text-slate-200">
-                <p className="font-semibold text-yellow-200">No saved profile found.</p>
-                <p className="mt-2">Please set up your profile on the Profile Setup page before sending an SOS.</p>
-                <button
-                  onClick={onEditProfile}
-                  className="mt-3 px-4 py-2 rounded-xl bg-pink-600 hover:bg-pink-500 text-slate-800 dark:text-white text-sm"
-                >
-                  Go to Profile Setup
-                </button>
-              </div>
-            )}
-
-            <div>
-              <label className="text-xs text-slate-600 dark:text-slate-400 block mb-1">Message (optional)</label>
-              <textarea
-                value={msg}
-                onChange={e => setMsg(e.target.value)}
-                placeholder="Describe your situation..."
-                rows={3}
-                className="w-full bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-white rounded-lg px-3 py-2.5 text-sm border border-black/20 dark:border-slate-600 focus:outline-none focus:border-pink-500 resize-none"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs text-slate-600 dark:text-slate-400 block mb-1">Your Location</label>
-              <p className="text-slate-800 dark:text-white font-mono text-sm">{pos ? `${pos[0].toFixed(5)}, ${pos[1].toFixed(5)}` : "Unavailable"}</p>
-              <p className="text-xs text-slate-500 mt-1">{pos ? "Shared live GPS" : "No location will be submitted."}</p>
-            </div>
-
-            {error && <p className="text-red-400 text-sm">{error}</p>}
-
-            <button
-              onClick={handleSOS}
-              disabled={sending || !userInfo || !pos || Boolean(result)}
-              className={`w-full py-4 rounded-xl bg-red-600 hover:bg-red-500 active:scale-95 text-slate-800 dark:text-white text-lg font-bold disabled:opacity-50 transition transform flex items-center justify-center gap-2 ${sending ? 'animate-pulse-fast ring-pulse' : 'hover:ring-pulse'}`}
-            >
-              {sending ? "Recording…" : result ? "SOS RECORDED" : "🆘  SEND SOS ALERT"}
-            </button>
-          </div>
-
-          {result && (
-            <div className="bg-green-900/30 border border-green-500/40 rounded-xl p-5">
-              <p className="text-green-400 font-bold text-lg mb-2">SOS Recorded</p>
-              <div className="text-sm text-slate-700 dark:text-slate-300 space-y-1">
-                <p><span className="text-slate-600 dark:text-slate-400">Alert ID:</span> {result.alert_id}</p>
-                <p><span className="text-slate-600 dark:text-slate-400">Station reference:</span> {result.nearest_station?.name}</p>
-                <p><span className="text-slate-600 dark:text-slate-400">Distance:</span> {result.nearest_station?.distance_km} km</p>
-                <p><span className="text-slate-600 dark:text-slate-400">Emergency contact:</span> {result.emergency_contact || "N/A"}</p>
-                <p><span className="text-slate-600 dark:text-slate-400">Medical details:</span> {result.medical_details || "N/A"}</p>
-                {result.nearest_helper && (
-                  <p><span className="text-slate-600 dark:text-slate-400">Nearest helper:</span> {result.nearest_helper.name} ({result.nearest_helper.distance_km} km)</p>
-                )}
-                <p><span className="text-slate-600 dark:text-slate-400">Police dispatch:</span> {result.police_dispatch}</p>
-                <p><span className="text-slate-600 dark:text-slate-400">Emergency contact notification:</span> {result.emergency_contact_notification}</p>
-                <p><span className="text-slate-600 dark:text-slate-400">Data mode:</span> {result.data_mode}</p>
-                <a
-                  href={result.live_location_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-blue-400 underline text-xs"
-                >
-                  Share live location link
-                </a>
-              </div>
-            </div>
-          )}
-
-          {log.length > 0 && (
-            <div className="bg-white/60 dark:bg-slate-800/60 rounded-xl p-4 border border-black/10 dark:border-slate-700">
-              <p className="text-xs text-slate-600 dark:text-slate-400 font-semibold mb-3">RECENT ALERTS ({log.length})</p>
-              <div className="space-y-2 max-h-40 overflow-y-auto">
-                {log.slice().reverse().map((a, i) => (
-                  <div key={i} className="flex justify-between text-xs text-slate-600 dark:text-slate-400 border-b border-black/10 dark:border-slate-700 pb-1">
-                    <span>{a.alert_id} — {a.user}</span>
-                    <span className="text-green-400">{a.status}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <section className="panel response-context"><div><p className="eyebrow">Reference only</p><h2>Nearby response context</h2><p>Station entries are dataset references. They do not mean police were contacted.</p></div><div className="context-list"><div><span className="context-badge"><Icon name="shield" size={18} /></span><span><strong>{station?.name || "Station reference unavailable"}</strong><small>{station ? `${station.distance_km} km away · ${station.contact}` : "No station data returned"}</small></span></div><div><span className="context-badge"><Icon name="profile" size={18} /></span><span><strong>{helper?.name || "No nearby helper found"}</strong><small>{helper ? `${helper.distance_km} km away` : "Nearby helper data is optional"}</small></span></div></div></section>
         </div>
 
-        {/* Right — Map */}
-        <div className="rounded-2xl overflow-hidden border border-black/10 dark:border-slate-700 h-[400px]">
-          <MapContainer
-            center={pos || MAP_PLACEHOLDER}
-            zoom={15}
-            style={{ height: "400px", width: "100%" }}
-          >
-            {/* Re-center map when pos updates */}
-            {pos && <RecenterMap pos={pos} />}
-
-            <TileLayer
-              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-              attribution='&copy; OpenStreetMap &copy; CartoDB'
-            />
-
-            {/* User location */}
-            {pos && <Circle
-              center={pos}
-              radius={100}
-              pathOptions={{ color: "#ef4444", fillColor: "#ef4444", fillOpacity: 0.3 }}
-            >
-              <Popup><strong>Your Location</strong><br />{pos[0].toFixed(5)}, {pos[1].toFixed(5)}</Popup>
-            </Circle>}
-
-            {/* Police stations */}
-            {stations.map((s, i) => {
-              if (s.lat == null || s.lng == null) return null;
-              return (
-              <Circle
-                key={s.id || i}
-                center={[s.lat, s.lng]}
-                radius={80}
-                pathOptions={{
-                  color: s.id === station?.id ? "#3b82f6" : "#60a5fa",
-                  fillColor: s.id === station?.id ? "#3b82f6" : "#60a5fa",
-                  fillOpacity: s.id === station?.id ? 0.6 : 0.25,
-                }}
-              >
-                <Popup>
-                  <strong>{s.name}</strong><br />
-                  {s.distance_km} km away<br />
-                  {s.contact}
-                </Popup>
-              </Circle>
-              );
-            })}
-          </MapContainer>
-        </div>
+        <aside className="sos-secondary">
+          <div className="map-frame sos-map"><MapContainer center={currentPos || MAP_PLACEHOLDER} zoom={15} style={{ height: "100%", width: "100%" }}><TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" attribution="&copy; OpenStreetMap &copy; CARTO" />{currentPos && <RecenterMap position={currentPos} />}{currentPos && <Circle center={currentPos} radius={100} pathOptions={{ color: "#c9363e", fillColor: "#c9363e", fillOpacity: .2 }}><Popup><strong>Your live location</strong><br />{currentPos[0].toFixed(5)}, {currentPos[1].toFixed(5)}</Popup></Circle>}{stations.map((item, index) => item.lat == null || item.lng == null ? null : <Circle key={item.id || index} center={[item.lat, item.lng]} radius={75} pathOptions={{ color: item.id === station?.id ? "#246b91" : "#74b5d7", fillOpacity: item.id === station?.id ? .45 : .18 }}><Popup><strong>{item.name}</strong><br />Reference only · {item.distance_km} km</Popup></Circle>)}</MapContainer>{!currentPos && <div className="map-unavailable"><Icon name="location" size={28} /><strong>Map waiting for location</strong><p>No fallback coordinates are displayed.</p></div>}</div>
+          {recentAlerts.length > 0 && <section className="panel recent-alerts"><h2>Recent recorded alerts</h2><div>{recentAlerts.slice(-4).reverse().map((alert, index) => <div key={alert.alert_id || index}><span><strong>{alert.alert_id}</strong><small>{alert.user || "PathRak user"}</small></span><StatusPill tone="neutral">{alert.status || "Recorded"}</StatusPill></div>)}</div></section>}
+        </aside>
       </div>
+
+      {confirming && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setConfirming(false); }}><div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-sos-title"><span className="confirm-icon"><Icon name="sos" size={28} /></span><h2 id="confirm-sos-title">Record an emergency alert?</h2><p>PathRak will submit your live coordinates, name, emergency contact, and medical context to the configured backend. External dispatch may not be configured.</p><div className="confirm-summary"><LocationStatus currentPos={currentPos} compact /><span>{userInfo?.emergency_contact}</span></div><div className="confirm-actions"><button className="btn btn-secondary" onClick={() => setConfirming(false)}>Cancel</button><button className="btn btn-danger" onClick={recordAlert}><Icon name="sos" />Record emergency alert</button></div></div></div>}
     </div>
   );
 }

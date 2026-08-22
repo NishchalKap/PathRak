@@ -7,7 +7,16 @@ import "leaflet/dist/leaflet.css";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <ClerkProvider afterSignOutUrl="/">
+    <ClerkProvider
+      afterSignOutUrl="/"
+      appearance={{
+        variables: {
+          colorPrimary: "#087f6d",
+          borderRadius: "0.75rem",
+          fontFamily: '"DM Sans", sans-serif',
+        },
+      }}
+    >
       <App />
     </ClerkProvider>
   </React.StrictMode>

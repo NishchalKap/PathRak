@@ -1,187 +1,127 @@
-import { useState, useRef } from "react";
-import { startSafeWalk, cancelSafeWalk, extendSafeWalk } from "../api";
+import { useEffect, useRef, useState } from "react";
+import { cancelSafeWalk, extendSafeWalk, startSafeWalk } from "../api";
+import Icon from "../components/Icon";
+import { LocationStatus, Notice, PageHeader, StatusPill } from "../components/UI";
 
-export default function SafeWalkPage({ userInfo, currentPos, monitor, isSubComponent }) {
+export default function SafeWalkPage({ userInfo, currentPos, locationError, monitor, isSubComponent }) {
   const { sw } = monitor || {};
   const [etaMinutes, setEtaMinutes] = useState(15);
-  const [dest, setDest] = useState("");
-  const [isVoiceOn, setIsVoiceOn] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const voiceAnnounceRef = useRef(null);
+  const [destination, setDestination] = useState("");
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState("");
+  const voiceIntervalRef = useRef(null);
+
+  useEffect(() => () => {
+    clearInterval(voiceIntervalRef.current);
+    window.speechSynthesis?.cancel();
+  }, []);
 
   if (!monitor) return null;
 
-  const handleStart = async () => {
-    if (!dest.trim()) return alert("Please enter a destination");
+  const speak = (text) => {
+    if (!("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1;
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const startJourney = async () => {
+    if (!destination.trim()) {
+      setError("Enter the destination you expect to reach.");
+      return;
+    }
     if (!currentPos) {
-      return alert("Current GPS location is required to start SafeWalk.");
+      setError("Live location is required to start SafeWalk.");
+      return;
     }
     if (!userInfo?.user_id || !userInfo?.name) {
-      return alert("Complete your profile before starting SafeWalk.");
+      setError("Complete your safety profile before starting SafeWalk.");
+      return;
     }
 
+    setWorking(true);
+    setError("");
     try {
-      const response = await startSafeWalk(
-        userInfo.user_id,
-        userInfo.name,
-        dest,
-        etaMinutes,
-        currentPos[0],
-        currentPos[1],
-        userInfo?.emergency_contact || "",
-      );
-      if (!response?.eta) throw new Error("SafeWalk response did not include an ETA.");
-      const etaTime = new Date(response.eta);
-      sw.setDestination(dest);
-      sw.setEtaTime(etaTime);
+      const response = await startSafeWalk(userInfo.user_id, userInfo.name, destination.trim(), etaMinutes, currentPos[0], currentPos[1], userInfo.emergency_contact || "");
+      if (!response?.eta) throw new Error("The server did not return an ETA.");
+      sw.setDestination(destination.trim());
+      sw.setEtaTime(new Date(response.eta));
       sw.setActive(true);
-    } catch (err) {
-      alert("Could not start SafeWalk. Please make sure the backend is running and try again.");
+    } catch (startError) {
+      setError(startError.message || "SafeWalk could not start. Check the service and try again.");
+    } finally {
+      setWorking(false);
     }
   };
 
-  // --- Voice / TTS helpers for periodic reminders ---
-  const speak = (text, onend) => {
-    if (!window.speechSynthesis) return;
-    const u = new SpeechSynthesisUtterance(text);
-    u.rate = 1.0;
-    u.onend = onend;
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(u);
-    setIsSpeaking(true);
-  };
-
-  const stopSpeaking = () => {
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
-    setIsSpeaking(false);
-  };
-
-  const startVoiceReminders = () => {
-    if (!sw.active) return;
-    setIsVoiceOn(true);
-    speak(`Voice reminders enabled. I'll announce time remaining every two minutes.`, () => setIsSpeaking(false));
-    // Announce immediately and then every 2 minutes
-    if (voiceAnnounceRef.current) clearInterval(voiceAnnounceRef.current);
-    voiceAnnounceRef.current = setInterval(() => {
-      if (!sw.active) return;
-      const mins = Math.floor((sw.timeLeft || 0) / 60);
-      if (mins <= 0) {
-        speak(`SafeWalk timer expired. Please confirm you are safe.`, () => setIsSpeaking(false));
-        clearInterval(voiceAnnounceRef.current);
-        setIsVoiceOn(false);
-        return;
-      }
-      speak(`Time left: ${mins} ${mins === 1 ? 'minute' : 'minutes'}.`, () => setIsSpeaking(false));
-    }, 120_000);
-  };
-
-  const stopVoiceReminders = () => {
-    setIsVoiceOn(false);
-    if (voiceAnnounceRef.current) {
-      clearInterval(voiceAnnounceRef.current);
-      voiceAnnounceRef.current = null;
-    }
-    stopSpeaking();
-  };
-
-  const handleCancel = () => {
-    if (userInfo?.user_id) {
-      cancelSafeWalk(userInfo.user_id).catch(() => {});
-    }
+  const markSafe = () => {
+    clearInterval(voiceIntervalRef.current);
+    setVoiceEnabled(false);
+    window.speechSynthesis?.cancel();
+    if (userInfo?.user_id) cancelSafeWalk(userInfo.user_id).catch(() => {});
     sw.reset();
   };
 
-  const handleExtend = async () => {
+  const extendJourney = async () => {
     if (!userInfo?.user_id || !sw.etaTime) return;
-
+    setWorking(true);
+    setError("");
     try {
       const response = await extendSafeWalk(userInfo.user_id, 10);
-      const newEta = response?.new_eta ? new Date(response.new_eta) : new Date(sw.etaTime.getTime() + 10 * 60 * 1000);
-      sw.setEtaTime(newEta);
-    } catch (err) {
-      alert("Could not extend SafeWalk right now.");
+      sw.setEtaTime(response?.new_eta ? new Date(response.new_eta) : new Date(sw.etaTime.getTime() + 600000));
+    } catch (extendError) {
+      setError(extendError.message || "SafeWalk could not be extended right now.");
+    } finally {
+      setWorking(false);
     }
   };
 
-  const formatTime = (seconds) => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  const toggleVoice = () => {
+    if (voiceEnabled) {
+      clearInterval(voiceIntervalRef.current);
+      window.speechSynthesis?.cancel();
+      setVoiceEnabled(false);
+      return;
+    }
+    setVoiceEnabled(true);
+    speak("Voice reminders enabled. PathRak will announce the remaining time every two minutes.");
+    clearInterval(voiceIntervalRef.current);
+    voiceIntervalRef.current = setInterval(() => {
+      const minutes = Math.floor((sw.timeLeft || 0) / 60);
+      speak(minutes > 0 ? `${minutes} ${minutes === 1 ? "minute" : "minutes"} remaining in SafeWalk.` : "SafeWalk time has expired. Please confirm you are safe.");
+    }, 120000);
   };
 
+  const formatTime = (seconds) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  const nearingDeadline = sw.active && sw.timeLeft > 0 && sw.timeLeft <= 300;
+
   return (
-    <div className="flex flex-col h-full gap-4 max-w-md mx-auto w-full">
-      {!isSubComponent && (
-        <div className="text-center mt-6">
-          <h1 className="text-3xl font-bold text-slate-800 dark:text-white mb-2">Safe Walk Mode</h1>
-          <p className="text-sm text-slate-600 dark:text-slate-400">Set an ETA and PathRak will record an SOS if you do not check in. Contact delivery requires a configured provider.</p>
-        </div>
-      )}
-      {isSubComponent && (
-        <div className="text-center mt-2 mb-2">
-          <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-1">Safe Walk</h2>
-          <p className="text-xs text-slate-600 dark:text-slate-400">Live destination tracking & ETA alerts.</p>
-        </div>
-      )}
+    <div className={`page-stack safewalk-page ${isSubComponent ? "embedded-page" : ""}`}>
+      {!isSubComponent && <PageHeader eyebrow="Journey protection" title="SafeWalk" description="Set an expected arrival time. If you do not check in before it expires, PathRak records an emergency alert." actions={<StatusPill tone={sw.active ? "success" : "neutral"} icon={sw.active ? "check" : "clock"}>{sw.active ? "Monitoring active" : "Not active"}</StatusPill>} />}
+      {isSubComponent && <div className="embedded-heading"><div><p className="eyebrow">Journey protection</p><h2>SafeWalk</h2></div><StatusPill tone={sw.active ? "success" : "neutral"}>{sw.active ? "Active" : "Off"}</StatusPill></div>}
 
       {!sw.active ? (
-        <div className="bg-white/40 dark:bg-slate-900/80 border border-black/10 dark:border-slate-700 rounded-2xl p-6 mt-4 shadow-xl">
-          <div className="space-y-5">
-            <div>
-              <label className="block text-sm text-slate-600 dark:text-slate-400 mb-1">Where are you heading?</label>
-              <input type="text" value={dest} onChange={(e) => setDest(e.target.value)} placeholder="e.g. Home, Subway Station" className="w-full bg-white/60 dark:bg-slate-800 border border-black/10 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-800 dark:text-white outline-none focus:border-emerald-500 transition-colors" />
-            </div>
-            <div>
-              <label className="block text-sm text-slate-600 dark:text-slate-400 mb-1">Expected time to arrive (minutes)</label>
-              <div className="flex items-center gap-4">
-                <input type="range" min="1" max="120" value={etaMinutes} onChange={(e) => setEtaMinutes(Number(e.target.value))} className="flex-1 accent-emerald-500" />
-                <span className="text-xl font-bold text-emerald-400 w-12 text-center">{etaMinutes}m</span>
-              </div>
-            </div>
-            <button disabled={!currentPos || !userInfo?.user_id} onClick={handleStart} className="w-full bg-emerald-600 hover:bg-emerald-500 text-slate-800 dark:text-white font-bold py-4 rounded-xl shadow-lg shadow-emerald-600/30 transition-colors mt-4 text-lg disabled:cursor-not-allowed disabled:opacity-50">Start Safe Walk</button>
-            {!currentPos && (
-              <p className="text-sm text-amber-300">Enable GPS location to start SafeWalk.</p>
-            )}
-            {!userInfo?.user_id && (
-              <p className="text-sm text-amber-300">Complete your profile to start SafeWalk.</p>
-            )}
-          </div>
+        <div className="journey-setup-grid">
+          <section className="panel journey-form">
+            <div className="panel-heading"><span className="panel-icon"><Icon name="walk" /></span><div><h2>Start a monitored journey</h2><p>Tell PathRak where you are going and when you expect to arrive.</p></div></div>
+            <div className="field"><label htmlFor={`destination-${isSubComponent ? "embedded" : "page"}`}>Destination</label><input id={`destination-${isSubComponent ? "embedded" : "page"}`} className="input" value={destination} onChange={(event) => setDestination(event.target.value)} placeholder="Home, station, campus..." autoComplete="street-address" /></div>
+            <div className="field"><div className="range-label"><label htmlFor={`eta-${isSubComponent ? "embedded" : "page"}`}>Expected journey time</label><strong>{etaMinutes} min</strong></div><input id={`eta-${isSubComponent ? "embedded" : "page"}`} type="range" min="1" max="120" value={etaMinutes} onChange={(event) => setEtaMinutes(Number(event.target.value))} className="range-input" /><div className="range-hints"><span>1 min</span><span>2 hours</span></div></div>
+            {error && <Notice tone="warning" title="SafeWalk unavailable">{error}</Notice>}
+            <button className="btn btn-primary journey-start" disabled={working || !currentPos || !userInfo?.user_id} onClick={startJourney}><Icon name="shield" />{working ? "Starting SafeWalk..." : "Start SafeWalk"}</button>
+          </section>
+          {!isSubComponent && <aside className="journey-readiness"><div className="panel"><h3>Journey readiness</h3><LocationStatus currentPos={currentPos} error={locationError} /><div className="readiness-row"><span className={userInfo ? "ready-dot" : "warning-dot"} /><span><strong>Emergency profile</strong><small>{userInfo ? `${userInfo.name} · contact saved` : "Profile required"}</small></span></div></div><Notice tone="info" title="What happens at zero">PathRak asks the backend to record an SOS alert. Contact delivery and external dispatch depend on configured providers.</Notice></aside>}
         </div>
       ) : (
-        <div className="bg-white/40 dark:bg-slate-900/80 border border-emerald-500/50 rounded-2xl p-6 mt-4 shadow-2xl text-center flex flex-col items-center">
-          <div className="relative w-20 h-20 rounded-full bg-emerald-500/20 flex items-center justify-center mb-4">
-            <div className="absolute w-16 h-16 rounded-full bg-emerald-500/40 animate-ping" />
-            <span className="relative text-2xl">🛡️</span>
-          </div>
-          <h2 className="text-xl font-semibold text-slate-800 dark:text-white mb-1">Heading to {sw.destination}</h2>
-          <p className="text-slate-600 dark:text-slate-400 mb-6">Tracking active. We're keeping an eye out.</p>
-          <div className="text-6xl font-mono font-bold text-slate-800 dark:text-white mb-8 tracking-wider">{formatTime(sw.timeLeft)}</div>
-          <div className="grid grid-cols-2 gap-4 w-full">
-            <button onClick={handleExtend} className="bg-white/60 dark:bg-slate-800 hover:bg-slate-200 dark:bg-slate-700 border border-black/20 dark:border-slate-600 text-slate-800 dark:text-white font-semibold py-3 rounded-xl transition-colors">+10 Mins</button>
-            <div className="flex gap-2">
-              <button onClick={handleCancel} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-slate-800 dark:text-white font-bold py-3 rounded-xl transition-colors">I'm Safe</button>
-              <button
-                onClick={() => isVoiceOn ? stopVoiceReminders() : startVoiceReminders()}
-                className="px-3 py-3 rounded-xl bg-white/60 dark:bg-slate-800 hover:bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-white border border-black/10 dark:border-slate-700 disabled:opacity-50"
-              >
-                {isVoiceOn ? '🔕 Voice Off' : '🔊 Voice Reminders'}
-              </button>
-            </div>
-          </div>
-          {sw.message && (
-            <div className="mt-4 w-full rounded-xl border border-amber-500/30 bg-amber-900/20 px-4 py-3 text-sm text-amber-100">
-              {sw.message}
-            </div>
-          )}
-          {sw.alertResult && (
-            <div className="mt-4 w-full rounded-xl border border-red-500/40 bg-red-900/20 px-4 py-3 text-left text-sm text-red-100">
-              <p className="font-semibold">Emergency alert recorded</p>
-              <p className="mt-1">Alert ID: {sw.alertResult.alert_id}</p>
-              <p>Station reference: {sw.alertResult.nearest_station?.name || "Unavailable"}</p>
-              <p>Police dispatch: {sw.alertResult.police_dispatch || "Unavailable"}</p>
-            </div>
-          )}
-        </div>
+        <section className={`active-journey ${nearingDeadline ? "is-warning" : ""}`} aria-live="polite">
+          <div className="active-journey-top"><StatusPill tone={nearingDeadline ? "warning" : "success"} icon={nearingDeadline ? "warning" : "check"}>{nearingDeadline ? "Check-in due soon" : "Monitoring active"}</StatusPill><span className="journey-destination"><Icon name="location" size={16} />{sw.destination}</span></div>
+          <div className="countdown-block"><p>Time remaining</p><strong>{formatTime(sw.timeLeft)}</strong><small>SafeWalk will record an alert if the timer expires before you check in.</small></div>
+          {error && <Notice tone="warning" title="Action unsuccessful">{error}</Notice>}
+          {sw.message && <Notice tone={sw.alertResult ? "danger" : "warning"} title={sw.alertResult ? "Emergency state" : "SafeWalk update"}>{sw.message}</Notice>}
+          {sw.alertResult && <div className="dispatch-summary"><h3>Emergency alert recorded</h3><dl><div><dt>Alert ID</dt><dd>{sw.alertResult.alert_id}</dd></div><div><dt>Station reference</dt><dd>{sw.alertResult.nearest_station?.name || "Unavailable"}</dd></div><div><dt>External dispatch</dt><dd>{sw.alertResult.police_dispatch || "Not configured"}</dd></div></dl></div>}
+          <div className="journey-controls"><button className="btn btn-secondary" disabled={working} onClick={extendJourney}><Icon name="clock" />Add 10 minutes</button><button className="btn btn-secondary" onClick={toggleVoice}>{voiceEnabled ? "Disable voice" : "Enable voice reminders"}</button><button className="btn btn-primary" onClick={markSafe}><Icon name="check" />I arrived safely</button></div>
+        </section>
       )}
     </div>
   );

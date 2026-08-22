@@ -2,18 +2,20 @@ import { useState, useEffect } from "react";
 import { MapContainer, TileLayer, Polyline, CircleMarker, Popup, useMap } from "react-leaflet";
 import { findSafeRoute, searchLocation } from "../api";
 import { getBackendWeekday } from "../utils/safetyLogic";
+import Icon from "../components/Icon";
+import { Notice, PageHeader, StatusPill } from "../components/UI";
 import "leaflet/dist/leaflet.css";
 
-const SCORE_COLOR = (score) => {
-  if (score >= 80) return { text: "text-green-400", bg: "bg-green-900/30", border: "border-green-500/40", line: "#22c55e" };
-  if (score >= 60) return { text: "text-amber-400", bg: "bg-amber-900/30", border: "border-amber-500/40", line: "#f59e0b" };
-  if (score >= 40) return { text: "text-orange-400", bg: "bg-orange-900/30", border: "border-orange-500/40", line: "#f97316" };
-  return { text: "text-red-400", bg: "bg-red-900/30", border: "border-red-500/40", line: "#ef4444" };
+const scoreStyle = (score) => {
+  if (score >= 80) return { tone: "safe", line: "#11875d" };
+  if (score >= 60) return { tone: "caution", line: "#b47712" };
+  return { tone: "danger", line: "#c9363e" };
 };
 
 function FitBounds({ routes }) {
   const map = useMap();
-  if (routes?.length > 0 && routes[0].coordinates?.length > 0) {
+  useEffect(() => {
+    if (!routes?.length || !routes[0].coordinates?.length) return;
     const allCoords = routes.flatMap(r => r.coordinates);
     const lats = allCoords.map(c => c[0]);
     const lngs = allCoords.map(c => c[1]);
@@ -21,7 +23,7 @@ function FitBounds({ routes }) {
       [Math.min(...lats), Math.min(...lngs)],
       [Math.max(...lats), Math.max(...lngs)],
     ], { padding: [40, 40] });
-  }
+  }, [map, routes]);
   return null;
 }
 
@@ -64,8 +66,8 @@ function LocationSearch({ label, value, onChange }) {
   }, [query]);
 
   return (
-    <div className="relative">
-      <label className="text-xs text-slate-600 dark:text-slate-400 block mb-2">{label}</label>
+    <div className="route-search field">
+      <label>{label}</label>
       <input
         type="text"
         value={query}
@@ -73,16 +75,15 @@ function LocationSearch({ label, value, onChange }) {
         onFocus={() => { if (results.length > 0) setIsOpen(true); }}
         onBlur={() => setTimeout(() => setIsOpen(false), 200)}
         placeholder="Search location..."
-        className="w-full bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-white rounded-lg px-3 py-2 text-sm border border-black/20 dark:border-slate-600 focus:outline-none focus:border-pink-500 placeholder-slate-500"
+        className="input"
       />
-      {loading && <div className="absolute right-3 top-9 text-xs text-slate-600 dark:text-slate-400">...</div>}
+      {loading && <span className="search-loading">Searching...</span>}
       
       {isOpen && results.length > 0 && (
-        <div className="absolute z-[1000] top-full left-0 right-0 mt-1 bg-white/60 dark:bg-slate-800 border border-black/20 dark:border-slate-600 rounded-lg shadow-xl overflow-hidden max-h-48 overflow-y-auto">
+        <div className="search-results">
           {results.map((r, i) => (
-            <div
+            <button type="button"
               key={i}
-              className="px-3 py-2 text-sm text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:bg-slate-700 cursor-pointer border-b border-black/10 dark:border-slate-700/50 last:border-0 truncate"
               onClick={() => {
                 setQuery(r.name);
                 onChange(r);
@@ -90,7 +91,7 @@ function LocationSearch({ label, value, onChange }) {
               }}
             >
               {r.name}
-            </div>
+            </button>
           ))}
         </div>
       )}
@@ -276,237 +277,50 @@ export default function RoutePage({ currentPos, theme }) {
   };
 
   return (
-    <div className="flex flex-col gap-4 h-full">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Safe Route Finder</h1>
-        <p className="text-sm text-slate-600 dark:text-slate-400">Compare routes and find the safest path to your destination</p>
-      </div>
+    <div className="page-stack route-page">
+      <PageHeader eyebrow="Safer navigation" title="Safe Route" description="Compare real road alternatives using route risk scores. PathRak never substitutes a straight line when routing is unavailable." actions={<StatusPill tone={routes.length ? "success" : "neutral"} icon="route">{routes.length ? `${routes.length} route${routes.length === 1 ? "" : "s"} found` : "Ready to plan"}</StatusPill>} />
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-        <div className="bg-white/60 dark:bg-slate-800/60 rounded-xl p-4 border border-black/10 dark:border-slate-700 relative z-50">
-          <LocationSearch
-            label="📍 Start"
-            value={start}
-            onChange={(value) => {
-              setStartEdited(true);
-              setStart(value);
-            }}
-          />
-        </div>
+      <section className="panel route-planner">
+        <div className="route-fields"><LocationSearch label="Start location" value={start} onChange={(value) => { setStartEdited(true); setStart(value); }} /><span className="route-connector" /><LocationSearch label="Destination" value={end} onChange={setEnd} /></div>
+        <div className="departure-field"><div><label htmlFor="departure-hour">Departure hour</label><strong>{String(hour).padStart(2, "0")}:00</strong></div><input id="departure-hour" type="range" min="0" max="23" value={hour} onChange={(event) => setHour(Number(event.target.value))} /><small>Current time {currentTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small></div>
+        <button className="btn btn-primary route-submit" onClick={handleFind} disabled={loading || !start || !end}><Icon name="route" />{loading ? "Calculating real routes..." : "Find safer routes"}</button>
+      </section>
 
-        <div className="bg-white/60 dark:bg-slate-800/60 rounded-xl p-4 border border-black/10 dark:border-slate-700 relative z-40">
-          <LocationSearch label="🏁 End" value={end} onChange={setEnd} />
-        </div>
+      {error && <Notice tone="warning" title="Route service unavailable" action={<button className="btn btn-secondary" onClick={handleFind} disabled={loading}>Try again</button>}>{error} No route has been fabricated.</Notice>}
+      {dataMode === "DEMO" && <Notice tone="warning" title="Demonstration risk data">Route geometry is real when returned by the provider, but safety scores use synthetic incidents and are not real-world safety guidance.</Notice>}
 
-        <div className="bg-white/60 dark:bg-slate-800/60 rounded-3xl p-4 border border-black/10 dark:border-slate-700/90 relative z-10">
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <div>
-              <p className="text-xs text-slate-600 dark:text-slate-400 uppercase tracking-[0.16em]">Departure time</p>
-              <p className="text-sm text-slate-800 dark:text-white">Plan for the safest hour</p>
-            </div>
-            <span className="rounded-full bg-pink-500/15 px-3 py-1 text-sm font-semibold text-pink-200">Selected: {String(hour).padStart(2, "0")}:00</span>
-          </div>
-          <div className="space-y-3">
-            <div className="rounded-3xl bg-white/40 dark:bg-slate-950/70 border border-black/10 dark:border-slate-700 p-5 text-center">
-              <p className="text-xs text-slate-600 dark:text-slate-400 uppercase tracking-[0.14em]">Current time</p>
-              <p className="text-4xl font-bold text-slate-800 dark:text-white mt-3">{currentTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
-              <p className="text-xs text-slate-500 mt-3 uppercase tracking-[0.14em]">Selected hour</p>
-              <p className="text-xl font-semibold text-pink-300 mt-1">{String(hour).padStart(2, "0")}:00</p>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs text-slate-500">
-                <span>Earlier</span>
-                <span>Later</span>
-              </div>
-              <div className="relative">
-                <input
-                  type="range"
-                  min={0}
-                  max={23}
-                  value={hour}
-                  onChange={e => setHour(Number(e.target.value))}
-                  className="h-2 w-full appearance-none rounded-full bg-white/10 accent-pink-500 outline-none transition duration-200 hover:bg-white/20"
-                />
-                <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 pointer-events-none bg-gradient-to-r from-pink-500/15 via-transparent to-slate-400/10 rounded-full h-2" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white/60 dark:bg-slate-800/60 rounded-xl p-4 border border-black/10 dark:border-slate-700 flex items-end relative z-10">
-          <button
-            onClick={handleFind}
-            disabled={loading}
-            className="w-full py-2.5 rounded-lg bg-pink-600 hover:bg-pink-500 text-slate-800 dark:text-white font-semibold text-sm disabled:opacity-50 transition"
-          >
-            {loading ? "Finding Routes…" : "Find Safe Route"}
-          </button>
-        </div>
-      </div>
-
-      {error && (
-        <div className="px-4 py-3 rounded-lg bg-yellow-900/40 border border-yellow-500/40 text-yellow-300 text-sm">{error}</div>
-      )}
-      {dataMode === "DEMO" && (
-        <div className="rounded-xl border border-amber-500/40 bg-amber-900/20 px-4 py-3 text-sm text-amber-200">
-          Route scores use synthetic demo incidents and are not real-world safety guidance.
-        </div>
-      )}
-
-      {routes.length > 0 && (
-        <div className={`grid grid-cols-1 gap-3 ${routes.length === 1 ? "md:grid-cols-1" : routes.length === 2 ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
-          {routes.map((route, i) => {
-            const c = SCORE_COLOR(route.score);
-            const isSelected = selectedRoute === i;
-            return (
-              <div
-                key={i}
-                onClick={() => setSelectedRoute(i)}
-                className={`rounded-xl p-4 border cursor-pointer transition-all ${c.bg} ${isSelected ? c.border + " ring-2 ring-pink-500" : "border-black/10 dark:border-slate-700"}`}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">
-                    Route {i + 1} {route.is_safest ? "⭐ Safest" : ""}
-                  </span>
-                  <span className={`text-2xl font-bold ${c.text}`}>{route.score}</span>
-                </div>
-                <p className={`text-sm font-semibold ${c.text} mb-1`}>{route.label}</p>
-                <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
-                  <span>Avg Risk: {route.avg_risk}/5</span>
-                  {route.distance_m && (
-                    <span>{(route.distance_m / 1000).toFixed(1)} km · {Math.round(route.duration_s / 60)} min</span>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {safest && (
-        <div className={`rounded-xl p-4 border flex items-center gap-4 ${SCORE_COLOR(safest.score).bg} ${SCORE_COLOR(safest.score).border}`}>
-          <div className="text-3xl">🛡️</div>
-          <div>
-            <p className={`text-xl font-bold ${SCORE_COLOR(safest.score).text}`}>
-              Route Safety: {safest.score}/100
-            </p>
-            <p className="text-slate-800 dark:text-white font-semibold mt-1">
-              Recommended: Route {routes.indexOf(safest) + 1} — {start?.name?.split(',')[0] || "Start"} → {end?.name?.split(',')[0] || "Destination"}
-            </p>
-            <p className={`text-sm ${SCORE_COLOR(safest.score).text}`}>
-              {safest.label}
-              {safest.distance_m ? ` · ${(safest.distance_m / 1000).toFixed(1)} km` : ""}
-            </p>
-            <div className="mt-3 flex items-center gap-2">
-              {!isVoiceOn ? (
-                <button
-                  onClick={startVoiceNavigation}
-                  className="px-3 py-1 rounded-lg bg-pink-600 hover:bg-pink-500 text-slate-800 dark:text-white text-sm font-semibold"
-                >
-                  ▶ Start Voice Nav
-                </button>
-              ) : (
-                <button
-                  onClick={stopVoiceNavigation}
-                  className="px-3 py-1 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-600 text-slate-800 dark:text-white text-sm font-semibold"
-                >
-                  ■ Stop Voice Nav
-                </button>
-              )}
-
-              <button
-                onClick={() => { const steps = buildSteps(safest); if (steps.length) speak(`Summary: ${safest.label}. Safety ${safest.score} out of 100.`); }}
-                className="px-3 py-1 rounded-lg bg-white/60 dark:bg-slate-800 hover:bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-white text-sm border border-black/10 dark:border-slate-700"
-              >
-                🔊 Speak Summary
-              </button>
-
-              <button
-                onClick={speakPrevStep}
-                disabled={!isVoiceOn}
-                className="px-2 py-1 rounded-lg bg-white/60 dark:bg-slate-800 hover:bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-white text-sm border border-black/10 dark:border-slate-700 disabled:opacity-40"
-              >
-                ← Prev
-              </button>
-
-              <button
-                onClick={speakNextStep}
-                disabled={!isVoiceOn}
-                className="px-2 py-1 rounded-lg bg-white/60 dark:bg-slate-800 hover:bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-white text-sm border border-black/10 dark:border-slate-700 disabled:opacity-40"
-              >
-                Next →
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="flex-1 rounded-2xl overflow-hidden border border-black/10 dark:border-slate-700 h-[400px] relative z-0">
-        <MapContainer center={start ? [start.lat, start.lng] : end ? [end.lat, end.lng] : [20, 0]} zoom={13} style={{ height: "400px", width: "100%" }}>
+      <div className={`route-workspace ${routes.length ? "has-routes" : ""}`}>
+        <div className="map-frame route-map">
+          <MapContainer center={start ? [start.lat, start.lng] : end ? [end.lat, end.lng] : [20, 0]} zoom={13} style={{ height: "100%", width: "100%" }}>
           <TileLayer
-            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-            attribution='&copy; OpenStreetMap &copy; CartoDB'
+            url={theme === "dark" ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"}
+            attribution="&copy; OpenStreetMap &copy; CARTO"
           />
           {routes.length > 0 && <FitBounds routes={routes} />}
-
-          {/* Render unselected routes first (background) */}
           {routes.map((route, i) => {
             if (selectedRoute === i) return null;
             if (!route.coordinates || route.coordinates.length === 0) return null;
-            const isSafest = route.is_safest;
-            return (
-              <Polyline
-                key={`bg-${i}`}
-                positions={route.coordinates}
-                pathOptions={{
-                  color: isSafest ? "#22c55e" : SCORE_COLOR(route.score).line,
-                  weight: 4,
-                  opacity: 0.5,
-                  dashArray: isSafest ? null : "8 6",
-                }}
-                eventHandlers={{ click: () => setSelectedRoute(i) }}
-              />
-            );
+            return <Polyline key={`bg-${i}`} positions={route.coordinates} pathOptions={{ color: scoreStyle(route.score).line, weight: 4, opacity: .48, dashArray: "8 6" }} eventHandlers={{ click: () => setSelectedRoute(i) }} />;
           })}
-
-          {/* Render selected route last (foreground) */}
           {routes.map((route, i) => {
             if (selectedRoute !== i) return null;
             if (!route.coordinates || route.coordinates.length === 0) return null;
-            const isSafest = route.is_safest;
-            return (
-              <Polyline
-                key={`fg-${i}`}
-                positions={route.coordinates}
-                pathOptions={{
-                  color: isSafest ? "#22c55e" : SCORE_COLOR(route.score).line,
-                  weight: 7,
-                  opacity: 1,
-                  dashArray: isSafest ? null : "6 4",
-                }}
-              />
-            );
+            return <Polyline key={`fg-${i}`} positions={route.coordinates} pathOptions={{ color: scoreStyle(route.score).line, weight: 7, opacity: 1 }} />;
           })}
-
-          {start && (
-            <CircleMarker center={[start.lat, start.lng]} radius={10}
-              pathOptions={{ color: "#22c55e", fillColor: "#22c55e", fillOpacity: 1 }}>
-              <Popup><strong>Start:</strong> {start.name}</Popup>
-            </CircleMarker>
-          )}
-
-          {end && (
-            <CircleMarker center={[end.lat, end.lng]} radius={10}
-              pathOptions={{ color: "#ef4444", fillColor: "#ef4444", fillOpacity: 1 }}>
-              <Popup><strong>End:</strong> {end.name}</Popup>
-            </CircleMarker>
-          )}
+          {start && <CircleMarker center={[start.lat, start.lng]} radius={9} pathOptions={{ color: "#087f6d", fillColor: "#087f6d", fillOpacity: 1 }}><Popup><strong>Start</strong><br />{start.name}</Popup></CircleMarker>}
+          {end && <CircleMarker center={[end.lat, end.lng]} radius={9} pathOptions={{ color: "#c9363e", fillColor: "#c9363e", fillOpacity: 1 }}><Popup><strong>Destination</strong><br />{end.name}</Popup></CircleMarker>}
         </MapContainer>
-      </div>
+          {!start && !end && <div className="map-unavailable"><Icon name="route" size={28} /><strong>Plan a route to begin</strong><p>Your live location will be used as the default start when available.</p></div>}
+        </div>
 
-      <p className="text-xs text-slate-500 text-center">
-        Green = safest route · Solid = selected · Dashed = alternatives · Click a route on map to highlight
-      </p>
+        <aside className="route-results">
+          {!routes.length ? <div className="panel route-empty"><span><Icon name="route" size={26} /></span><h2>No route calculated yet</h2><p>Choose a destination to compare available road routes, travel time, distance, and risk score.</p></div> : <>
+            <div className="route-result-heading"><p className="eyebrow">Route alternatives</p><h2>Choose your route</h2></div>
+            <div className="route-options">{routes.map((route, index) => { const selected = selectedRoute === index; const style = scoreStyle(route.score); return <button key={index} className={`route-option tone-${style.tone} ${selected ? "is-selected" : ""}`} onClick={() => setSelectedRoute(index)}><span className="route-index">{index + 1}</span><span className="route-copy"><strong>{route.is_safest ? "Recommended route" : `Alternative ${index + 1}`}</strong><small>{route.label} · Average risk {route.avg_risk}/5</small>{route.distance_m && <small>{(route.distance_m / 1000).toFixed(1)} km · {Math.round(route.duration_s / 60)} min</small>}</span><span className="route-score"><strong>{route.score}</strong><small>/100</small></span></button>; })}</div>
+            {safest && <section className="voice-panel"><div><p className="eyebrow">Recommended</p><h3>{start?.name?.split(",")[0]} to {end?.name?.split(",")[0]}</h3><p>{safest.label} · Safety score {safest.score}/100</p></div><div className="voice-actions"><button className="btn btn-secondary" onClick={isVoiceOn ? stopVoiceNavigation : startVoiceNavigation}>{isVoiceOn ? "Stop voice" : "Start voice guidance"}</button><button className="btn btn-quiet" onClick={() => speak(`Summary: ${safest.label}. Safety ${safest.score} out of 100.`)}>Speak summary</button>{isVoiceOn && <><button className="btn btn-quiet" onClick={speakPrevStep}>Previous</button><button className="btn btn-quiet" onClick={speakNextStep}>Next</button></>}</div></section>}
+          </>}
+        </aside>
+      </div>
     </div>
   );
 }

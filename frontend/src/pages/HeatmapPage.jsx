@@ -11,6 +11,7 @@ import {
 } from "../api";
 import "leaflet/dist/leaflet.css";
 import { getBackendWeekday } from "../utils/safetyLogic";
+import { Notice, PageHeader, StatusPill } from "../components/UI";
 
 const RISK_COLORS = {
   1: "#2563eb",
@@ -299,7 +300,7 @@ export default function HeatmapPage({ userInfo, currentPos, locationError, theme
       setReportDesc("");
       fetchHeatmap();
     } catch {
-      alert("Failed to report danger pin.");
+      setError("The danger report could not be saved. Try again when the service is available.");
     }
   };
 
@@ -313,7 +314,7 @@ export default function HeatmapPage({ userInfo, currentPos, locationError, theme
         const res = await getSafeSpots(currentPos[0], currentPos[1], 4000);
         setSafeSpots(res.spots || []);
       } catch {
-        alert("Failed to load safe spots");
+        setError("Safe spots could not be loaded from the service.");
       } finally {
         setLoading(false);
       }
@@ -321,15 +322,12 @@ export default function HeatmapPage({ userInfo, currentPos, locationError, theme
   };
 
   return (
-    <div className="flex flex-col h-full gap-4">
+    <div className="page-stack heatmap-page">
       {/* Header */}
       <div className="flex flex-col gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Safety Heatmap</h1>
-          <p className="text-sm text-slate-600 dark:text-slate-400">AI-predicted risk zones — updated in real time</p>
-        </div>
+        <PageHeader eyebrow="Area intelligence" title="Safety map" description="Explore returned risk zones, incident reports, safe spots, and nearby-help context around your live location." actions={<StatusPill tone={points.length ? "success" : currentPos ? "neutral" : "warning"} icon="map">{points.length ? `${points.length} zones shown` : currentPos ? "Ready to load" : "Location required"}</StatusPill>} />
 
-        <div className="grid gap-4 md:grid-cols-[1.4fr_0.9fr] items-center rounded-3xl border border-black/10 dark:border-slate-700/80 bg-white/40 dark:bg-slate-900/70 p-4 shadow-xl shadow-slate-950/30">
+        <div className="panel heatmap-toolbar">
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -347,36 +345,32 @@ export default function HeatmapPage({ userInfo, currentPos, locationError, theme
               <input
                 type="range" min={0} max={23} value={selectedHour}
                 onChange={(e) => setSelectedHour(Number(e.target.value))}
-                className="h-2 w-full appearance-none rounded-full bg-white/10 accent-pink-500 outline-none transition duration-200 hover:bg-white/20"
+                className="h-2 w-full appearance-none rounded-full bg-white/10 accent-emerald-600 outline-none transition duration-200 hover:bg-white/20"
               />
               <p className="text-xs text-slate-500">Current data is shown automatically; use the slider to preview a different hour.</p>
             </div>
           </div>
 
-          <div className="flex flex-col justify-center gap-3 rounded-3xl border border-black/10 dark:border-slate-700/80 bg-white/40 dark:bg-slate-950/60 p-4">
+          <div className="heatmap-toolbar-actions">
             <div className="rounded-3xl bg-white/40 dark:bg-slate-900/80 p-5 border border-black/10 dark:border-slate-700 text-center">
               <p className="text-xs text-slate-600 dark:text-slate-400 uppercase tracking-[0.16em]">Current time</p>
               <p className="text-4xl font-bold text-slate-800 dark:text-white mt-3">{currentTimeLabel}</p>
               <p className="text-xs text-slate-500 mt-3 uppercase tracking-[0.16em]">Displayed data hour</p>
-              <p className="text-xl font-semibold text-pink-300 mt-1">
+              <p className="text-xl font-semibold text-emerald-600 dark:text-emerald-400 mt-1">
                 {String(appliedHour).padStart(2, "0")}:00 {appliedHour === currentHour ? "(Live)" : "(Preview)"}
               </p>
             </div>
             <button
               onClick={() => setAppliedHour(selectedHour)}
               disabled={loading}
-              className="w-full rounded-2xl bg-gradient-to-r from-pink-600 to-fuchsia-500 px-4 py-3 text-sm font-semibold text-slate-800 dark:text-white shadow-lg shadow-pink-500/20 transition hover:from-pink-500 hover:to-fuchsia-400 disabled:cursor-not-allowed disabled:opacity-50"
+              className="btn btn-primary"
             >
               {loading ? "Loading…" : previewButtonLabel}
             </button>
             <button
               onClick={handleToggleSafeSpots}
               disabled={loading}
-              className={`w-full rounded-2xl px-4 py-3 text-sm font-semibold shadow-lg transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                showSafeSpots
-                  ? "bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-white border border-black/20 dark:border-slate-600"
-                  : "bg-gradient-to-r from-blue-600 to-blue-500 text-slate-800 dark:text-white border border-transparent hover:from-blue-500 hover:to-blue-400"
-              }`}
+              className="btn btn-secondary"
             >
               {showSafeSpots ? "Hide Safe Spots" : "Show Safe Spots (Police/Hospital)"}
             </button>
@@ -384,17 +378,13 @@ export default function HeatmapPage({ userInfo, currentPos, locationError, theme
         </div>
       </div>
 
-      {error && (
-        <div className="px-4 py-3 rounded-lg bg-red-900/40 border border-red-500/40 text-red-300 text-sm">{error}</div>
-      )}
+      {error && <Notice tone="warning" title="Safety data unavailable" action={<button className="btn btn-secondary" onClick={fetchHeatmap}>Try again</button>}>{error}</Notice>}
       {dataMode === "DEMO" && (
-        <div className="rounded-xl border border-amber-500/40 bg-amber-900/20 px-4 py-3 text-sm text-amber-200">
-          Demo data: synthetic incidents, not real-world safety statistics.
-        </div>
+        <Notice tone="warning" title="Demonstration data">Synthetic incidents are displayed for product demonstration and are not real-world safety statistics.</Notice>
       )}
 
       {/* Legend */}
-      <div className="flex gap-3 flex-wrap">
+      <div className="map-legend heatmap-legend">
         {[
           ["Very Low",  "#1e40af"],
           ["Low",       "#3b82f6"],
@@ -408,7 +398,7 @@ export default function HeatmapPage({ userInfo, currentPos, locationError, theme
           </div>
         ))}
         <div className="flex items-center gap-1.5 ml-4">
-          <div className="w-3 h-3 rounded-full border-2 border-pink-400" />
+          <div className="w-3 h-3 rounded-full border-2 border-emerald-500" />
           <span className="text-xs text-slate-600 dark:text-slate-400">DBSCAN Hotspot</span>
         </div>
         <div className="flex items-center gap-1.5 ml-4">
@@ -422,7 +412,7 @@ export default function HeatmapPage({ userInfo, currentPos, locationError, theme
       </div>
 
       {/* Map */}
-      <div className="relative flex-1 rounded-2xl overflow-hidden border border-black/10 dark:border-slate-700 h-[420px]">
+      <div className="map-frame heatmap-map">
         <MapContainer
           center={currentPos || MAP_PLACEHOLDER}
           zoom={14}
@@ -508,12 +498,12 @@ export default function HeatmapPage({ userInfo, currentPos, locationError, theme
         <div className="absolute top-4 right-4 z-[400] flex flex-col items-end">
           <button
             onClick={() => setShowFeed(!showFeed)}
-            className="mb-2 rounded-xl bg-white/40 dark:bg-slate-900/90 border border-black/10 dark:border-slate-700 px-4 py-2 text-sm font-semibold text-slate-800 dark:text-white shadow-xl backdrop-blur-md hover:bg-white/60 dark:bg-slate-800 transition"
+            className="btn btn-secondary activity-toggle"
           >
             {showFeed ? "Hide Activity Feed" : "Live Activity Feed 🔔"}
           </button>
           {showFeed && (
-            <div className="w-80 max-h-96 overflow-y-auto rounded-2xl bg-white/40 dark:bg-slate-900/95 border border-black/10 dark:border-slate-700 shadow-2xl backdrop-blur-xl p-4 flex flex-col gap-3">
+            <div className="activity-feed panel">
               <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1 sticky top-0 bg-white/40 dark:bg-slate-900/95 pb-2">
                 Recent Reports
               </h3>
@@ -521,8 +511,8 @@ export default function HeatmapPage({ userInfo, currentPos, locationError, theme
                 <p className="text-xs text-slate-500">No recent incidents.</p>
               ) : (
                 incidents.map((inc) => (
-                  <div key={inc.id} className="border-l-2 border-pink-500 pl-3 py-1">
-                    <p className="text-xs text-pink-400 font-semibold">{inc.type}</p>
+                  <div key={inc.id} className="border-l-2 border-emerald-600 pl-3 py-1">
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold">{inc.type}</p>
                     <p className="text-sm text-slate-700 dark:text-slate-300">{inc.area}</p>
                     <p className="text-xs text-slate-500 mt-1">{inc.relative_time}</p>
                   </div>
@@ -534,22 +524,22 @@ export default function HeatmapPage({ userInfo, currentPos, locationError, theme
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="heatmap-metrics">
         {[
-          { label: "Total Zones",     value: points.length,                          color: "text-pink-400"    },
+          { label: "Total Zones",     value: points.length,                          color: "text-emerald-600 dark:text-emerald-400" },
           { label: "Critical Zones",  value: points.filter(p => p.risk === 5).length, color: "text-red-400"     },
           { label: "DBSCAN Hotspots", value: hotspots.length,                        color: "text-amber-400"   },
           { label: "Smart Check",     value: homeSaved ? "Ready" : "Setup required", color: homeSaved ? "text-emerald-400" : "text-slate-600 dark:text-slate-400" },
         ].map(s => (
-          <div key={s.label} className="bg-white/60 dark:bg-slate-800/60 rounded-xl p-4 border border-black/10 dark:border-slate-700">
+          <div key={s.label} className="metric">
             <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
             <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">{s.label}</p>
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="bg-white/60 dark:bg-slate-800/60 rounded-xl p-4 border border-black/10 dark:border-slate-700">
+      <div className="helper-summary">
+        <div className="panel">
           <p className="text-xs text-slate-600 dark:text-slate-400">Nearest helper</p>
           <p className="text-2xl font-bold text-slate-800 dark:text-white mt-2">
             {nearestHelper ? `${nearestHelper.name} (${nearestHelper.distance_km} km)` : "No helper nearby"}
@@ -560,9 +550,9 @@ export default function HeatmapPage({ userInfo, currentPos, locationError, theme
 
       {/* Report Modal */}
       {reportModal.open && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white/40 dark:bg-slate-900 border border-black/10 dark:border-slate-700 p-6 shadow-xl">
-            <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-4">Report Danger Here?</h2>
+        <div className="modal-backdrop">
+          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="danger-report-title">
+            <h2 id="danger-report-title">Report danger at this point?</h2>
             <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
               {reportModal.lat.toFixed(4)}, {reportModal.lng.toFixed(4)}
             </p>
@@ -572,7 +562,7 @@ export default function HeatmapPage({ userInfo, currentPos, locationError, theme
                 <select
                   value={reportType}
                   onChange={(e) => setReportType(e.target.value)}
-                  className="w-full rounded-lg bg-white/60 dark:bg-slate-800 border border-black/10 dark:border-slate-700 p-2 text-slate-800 dark:text-white outline-none focus:border-pink-500"
+                  className="input"
                 >
                   <option>Harassment</option>
                   <option>Suspicious Activity</option>
@@ -588,20 +578,20 @@ export default function HeatmapPage({ userInfo, currentPos, locationError, theme
                   value={reportDesc}
                   onChange={(e) => setReportDesc(e.target.value)}
                   placeholder="Additional details..."
-                  className="w-full rounded-lg bg-white/60 dark:bg-slate-800 border border-black/10 dark:border-slate-700 p-2 text-slate-800 dark:text-white outline-none focus:border-pink-500"
+                  className="input"
                 />
               </div>
             </div>
-            <div className="flex gap-3 mt-6">
+            <div className="confirm-actions">
               <button
                 onClick={() => setReportModal({ open: false, lat: null, lng: null })}
-                className="flex-1 rounded-lg bg-white/60 dark:bg-slate-800 py-2 text-sm font-semibold text-slate-800 dark:text-white hover:bg-slate-200 dark:bg-slate-700"
+                className="btn btn-secondary"
               >
                 Cancel
               </button>
               <button
                 onClick={submitDangerPin}
-                className="flex-1 rounded-lg bg-red-600 py-2 text-sm font-semibold text-slate-800 dark:text-white hover:bg-red-500"
+                className="btn btn-danger"
               >
                 Report
               </button>

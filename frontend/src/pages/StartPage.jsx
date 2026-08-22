@@ -1,139 +1,64 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { registerUser } from "../api";
+import Icon from "../components/Icon";
+import { Notice, PageHeader, StatusPill } from "../components/UI";
 
-export default function StartPage({ userInfo, setUserInfo, onComplete, currentPos, clerkUserId, profileStorageKey, defaultName = "" }) {
+export default function StartPage({ userInfo, setUserInfo, onComplete, currentPos, clerkUserId, profileStorageKey, defaultName = "", isOnboarding = false }) {
   const [name, setName] = useState("");
   const [contact, setContact] = useState("");
   const [medical, setMedical] = useState("");
   const [error, setError] = useState("");
-  const [saved, setSaved] = useState(false);
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (userInfo) {
-      setName(userInfo.name || "");
-      setContact(userInfo.emergency_contact || "");
-      setMedical(userInfo.medical_details || "");
-      setSaved(true);
-    } else {
-      setName(defaultName);
-      setContact("");
-      setMedical("");
-      setSaved(false);
-    }
+    setName(userInfo?.name || defaultName);
+    setContact(userInfo?.emergency_contact || "");
+    setMedical(userInfo?.medical_details || "");
   }, [defaultName, userInfo]);
 
-  const saveProfile = async () => {
-    if (!name.trim()) {
-      setError("Please enter your full name.");
-      return;
-    }
-    if (!contact.trim()) {
-      setError("Please enter an emergency contact.");
-      return;
-    }
+  const saveProfile = async (event) => {
+    event.preventDefault();
+    if (!name.trim()) return setError("Enter your full name.");
+    if (!contact.trim()) return setError("Enter the contact PathRak should include with emergency alerts.");
+    if (!clerkUserId || !profileStorageKey) return setError("Your account is still loading. Try again in a moment.");
 
-    if (!clerkUserId || !profileStorageKey) {
-      setError("Your account is still loading. Please try again.");
-      return;
-    }
-
-    const profile = {
-      user_id: clerkUserId,
-      name: name.trim(),
-      emergency_contact: contact.trim(),
-      medical_details: medical.trim(),
-    };
-
+    const profile = { user_id: clerkUserId, name: name.trim(), emergency_contact: contact.trim(), medical_details: medical.trim() };
+    setSaving(true);
+    setError("");
+    setMessage("");
     localStorage.setItem(profileStorageKey, JSON.stringify(profile));
     setUserInfo(profile);
-    setError("");
-    setSaved(true);
 
     if (currentPos) {
       try {
-        await registerUser(
-          profile.user_id,
-          profile.name,
-          profile.emergency_contact,
-          profile.medical_details,
-          currentPos[0],
-          currentPos[1],
-        );
+        await registerUser(profile.user_id, profile.name, profile.emergency_contact, profile.medical_details, currentPos[0], currentPos[1]);
       } catch {
-        // ignore registration failures for now
+        setMessage("Profile saved on this device. The backend is currently unavailable, so nearby-helper registration will retry when location updates.");
       }
     }
-
-    if (onComplete) onComplete();
+    setSaving(false);
+    onComplete?.();
   };
 
   return (
-    <div className="flex flex-col gap-4 h-full">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Set up your safety profile</h1>
-        <p className="text-sm text-slate-600 dark:text-slate-400">Save your name, emergency contact, and medical details once so SOS can be sent quickly.</p>
-      </div>
+    <div className="page-stack profile-page">
+      {!isOnboarding && <PageHeader eyebrow="Account safety" title="Emergency profile" description="Keep the information used by SOS, SafeWalk, Smart Check, and nearby-helper features accurate." actions={<StatusPill tone={userInfo ? "success" : "warning"} icon={userInfo ? "check" : "warning"}>{userInfo ? "Profile ready" : "Setup required"}</StatusPill>} />}
+      <div className="profile-layout">
+        <form className="panel profile-form" onSubmit={saveProfile} noValidate>
+          <div className="panel-heading"><span className="panel-icon"><Icon name="profile" /></span><div><h2>{userInfo ? "Update emergency details" : "Add emergency details"}</h2><p>Required fields are marked. Review them before every important journey.</p></div></div>
+          <div className="field"><label htmlFor="profile-name">Full name <span aria-hidden="true">*</span></label><input id="profile-name" className="input" value={name} onChange={(event) => setName(event.target.value)} placeholder="Your full name" autoComplete="name" required /></div>
+          <div className="field"><label htmlFor="profile-contact">Emergency contact <span aria-hidden="true">*</span></label><input id="profile-contact" className="input" type="tel" value={contact} onChange={(event) => setContact(event.target.value)} placeholder="Phone number with country code" autoComplete="tel" inputMode="tel" required /><small>PathRak includes this contact with supported alerts. Delivery requires a configured provider.</small></div>
+          <div className="field"><label htmlFor="profile-medical">Medical details <span className="optional-label">Optional</span></label><textarea id="profile-medical" className="input" value={medical} onChange={(event) => setMedical(event.target.value)} placeholder="Allergies, medicines, or conditions responders should know" rows="4" /></div>
+          {error && <Notice tone="danger" title="Check your profile" role="alert">{error}</Notice>}
+          {message && <Notice tone="warning" title="Saved locally">{message}</Notice>}
+          <button className="btn btn-primary profile-save" type="submit" disabled={saving}>{saving ? "Saving profile..." : userInfo ? "Save profile changes" : "Complete setup"}</button>
+        </form>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1">
-        <div className="bg-white/60 dark:bg-slate-800/60 rounded-2xl p-6 border border-black/10 dark:border-slate-700 space-y-4">
-          <div>
-            <label className="text-xs text-slate-600 dark:text-slate-400 block mb-2">Full Name *</label>
-            <input
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="e.g. Priya Sharma"
-              className="w-full bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-white rounded-xl px-4 py-3 text-sm border border-black/20 dark:border-slate-600 focus:outline-none focus:border-pink-500"
-            />
-          </div>
-
-          <div>
-            <label className="text-xs text-slate-600 dark:text-slate-400 block mb-2">Emergency Contact *</label>
-            <input
-              value={contact}
-              onChange={e => setContact(e.target.value)}
-              placeholder="e.g. +91-98765-43210"
-              className="w-full bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-white rounded-xl px-4 py-3 text-sm border border-black/20 dark:border-slate-600 focus:outline-none focus:border-pink-500"
-            />
-          </div>
-
-          <div>
-            <label className="text-xs text-slate-600 dark:text-slate-400 block mb-2">Medical Details</label>
-            <textarea
-              value={medical}
-              onChange={e => setMedical(e.target.value)}
-              placeholder="Allergies, medicines, medical conditions..."
-              rows={4}
-              className="w-full bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-white rounded-xl px-4 py-3 text-sm border border-black/20 dark:border-slate-600 focus:outline-none focus:border-pink-500 resize-none"
-            />
-          </div>
-
-          {error && <p className="text-red-400 text-sm">{error}</p>}
-
-          <button
-            onClick={saveProfile}
-            className="w-full py-4 rounded-xl bg-pink-600 hover:bg-pink-500 text-slate-800 dark:text-white font-semibold text-sm transition"
-          >
-            {saved ? "Save updates" : "Save profile"}
-          </button>
-        </div>
-
-        <div className="bg-white/60 dark:bg-slate-800/60 rounded-2xl p-6 border border-black/10 dark:border-slate-700">
-          <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">Your profile will be stored locally on this device and used automatically on the SOS page.</p>
-
-          <div className="space-y-3">
-            <div className="rounded-xl bg-white/40 dark:bg-slate-900/50 p-4 border border-black/10 dark:border-slate-700">
-              <p className="text-xs uppercase tracking-wide text-slate-500">Saved details</p>
-              <p className="mt-3 text-sm text-slate-800 dark:text-white">Name: <span className="text-slate-700 dark:text-slate-300">{name || "Not set yet"}</span></p>
-              <p className="text-sm text-slate-800 dark:text-white">Emergency contact: <span className="text-slate-700 dark:text-slate-300">{contact || "Not set yet"}</span></p>
-              <p className="text-sm text-slate-800 dark:text-white">Medical details: <span className="text-slate-700 dark:text-slate-300">{medical || "Not set yet"}</span></p>
-            </div>
-
-            <div className="rounded-xl bg-emerald-900/20 border border-emerald-500/20 p-4">
-              <p className="text-sm font-semibold text-emerald-300">Fast SOS</p>
-              <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">Your name will auto-fill on the SOS page and your emergency contact will be included when you send an alert.</p>
-            </div>
-          </div>
-        </div>
+        <aside className="profile-context">
+          <div className="panel privacy-panel"><span className="context-icon"><Icon name="shield" size={24} /></span><h2>Scoped to your account</h2><p>These details are stored on this device under your signed-in Clerk user ID. Another PathRak account on this browser cannot load them.</p></div>
+          <div className="panel profile-usage"><h3>Where this information is used</h3><ul><li><Icon name="sos" size={17} /><span><strong>Emergency alerts</strong><small>Name, contact, and medical details</small></span></li><li><Icon name="walk" size={17} /><span><strong>SafeWalk</strong><small>Journey ownership and contact context</small></span></li><li><Icon name="clock" size={17} /><span><strong>Smart Check</strong><small>Missed check-in alert context</small></span></li></ul></div>
+        </aside>
       </div>
     </div>
   );

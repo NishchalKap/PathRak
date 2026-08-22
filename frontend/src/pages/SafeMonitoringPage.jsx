@@ -1,31 +1,22 @@
-import React from "react";
+import { useState } from "react";
+import ShakeDetector from "../components/ShakeDetector";
+import { LocationStatus, PageHeader, StatusPill } from "../components/UI";
 import SafeWalkPage from "./SafeWalkPage";
 import SmartCheckPage from "./SmartCheckPage";
-import ShakeDetector from "../components/ShakeDetector";
 
 export default function SafeMonitoringPage(props) {
+  const [mobileView, setMobileView] = useState("walk");
+  const anyActive = props.monitor?.sw?.active || props.monitor?.sc?.status === "pending";
+
   return (
-    <div className="flex flex-col gap-6 h-full">
-      <div>
-        <h1 className="text-3xl font-bold text-slate-800 dark:text-white mb-2">Safe Monitoring</h1>
-        <p className="text-sm text-slate-600 dark:text-slate-400">
-          A unified view of your active SafeWalk tracking and background Smart Check routines.
-        </p>
-      </div>
-
-      {/* Shake Detection Module */}
+    <div className="page-stack monitoring-page">
+      <PageHeader eyebrow="Continuous protection" title="Safety monitoring" description="Manage journey tracking, timed check-ins, and device-motion emergency detection from one place." actions={<StatusPill tone={anyActive ? "success" : "neutral"} icon={anyActive ? "check" : "monitor"}>{anyActive ? "Protection active" : "No active session"}</StatusPill>} />
+      <div className="monitoring-readiness"><LocationStatus currentPos={props.currentPos} error={props.locationError} compact /><span className="monitor-divider" /><p><strong>Emergency profile</strong><span>{props.userInfo?.emergency_contact ? "Contact ready" : "Contact missing"}</span></p></div>
       <ShakeDetector userInfo={props.userInfo} currentPos={props.currentPos} />
-
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 flex-1 overflow-hidden">
-        {/* SafeWalk Column */}
-        <div className="bg-white/40 dark:bg-slate-900/50 rounded-3xl p-6 border border-black/5 dark:border-slate-800 shadow-xl overflow-y-auto">
-          <SafeWalkPage {...props} isSubComponent={true} />
-        </div>
-
-        {/* Smart Check Column */}
-        <div className="bg-white/40 dark:bg-slate-900/50 rounded-3xl p-6 border border-black/5 dark:border-slate-800 shadow-xl overflow-y-auto">
-          <SmartCheckPage {...props} isSubComponent={true} />
-        </div>
+      <div className="monitor-tabs" role="tablist" aria-label="Monitoring tools"><button className={mobileView === "walk" ? "is-active" : ""} onClick={() => setMobileView("walk")} role="tab" aria-selected={mobileView === "walk"}>SafeWalk</button><button className={mobileView === "check" ? "is-active" : ""} onClick={() => setMobileView("check")} role="tab" aria-selected={mobileView === "check"}>Smart Check</button></div>
+      <div className="monitoring-grid">
+        <section className={`monitoring-column ${mobileView === "walk" ? "mobile-active" : ""}`}><SafeWalkPage {...props} isSubComponent /></section>
+        <section className={`monitoring-column ${mobileView === "check" ? "mobile-active" : ""}`}><SmartCheckPage {...props} isSubComponent /></section>
       </div>
     </div>
   );
