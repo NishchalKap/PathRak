@@ -1,24 +1,12 @@
 import { useState, useEffect } from "react";
 import { registerUser } from "../api";
 
-const USER_INFO_KEY = "pathrak_user_info";
-
-export default function StartPage({ userInfo, setUserInfo, onComplete }) {
+export default function StartPage({ userInfo, setUserInfo, onComplete, currentPos, clerkUserId, profileStorageKey, defaultName = "" }) {
   const [name, setName] = useState("");
   const [contact, setContact] = useState("");
   const [medical, setMedical] = useState("");
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
-  const [position, setPosition] = useState(null);
-
-  useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => setPosition([pos.coords.latitude, pos.coords.longitude]),
-        () => {},
-      );
-    }
-  }, []);
 
   useEffect(() => {
     if (userInfo) {
@@ -26,8 +14,13 @@ export default function StartPage({ userInfo, setUserInfo, onComplete }) {
       setContact(userInfo.emergency_contact || "");
       setMedical(userInfo.medical_details || "");
       setSaved(true);
+    } else {
+      setName(defaultName);
+      setContact("");
+      setMedical("");
+      setSaved(false);
     }
-  }, [userInfo]);
+  }, [defaultName, userInfo]);
 
   const saveProfile = async () => {
     if (!name.trim()) {
@@ -39,29 +32,32 @@ export default function StartPage({ userInfo, setUserInfo, onComplete }) {
       return;
     }
 
-    const user_id = userInfo?.user_id || crypto.randomUUID();
+    if (!clerkUserId || !profileStorageKey) {
+      setError("Your account is still loading. Please try again.");
+      return;
+    }
+
     const profile = {
-      user_id,
+      user_id: clerkUserId,
       name: name.trim(),
       emergency_contact: contact.trim(),
       medical_details: medical.trim(),
     };
 
-    localStorage.setItem(USER_INFO_KEY, JSON.stringify(profile));
-    localStorage.removeItem("safeher_user_info");
+    localStorage.setItem(profileStorageKey, JSON.stringify(profile));
     setUserInfo(profile);
     setError("");
     setSaved(true);
 
-    if (position) {
+    if (currentPos) {
       try {
         await registerUser(
           profile.user_id,
           profile.name,
           profile.emergency_contact,
           profile.medical_details,
-          position[0],
-          position[1],
+          currentPos[0],
+          currentPos[1],
         );
       } catch {
         // ignore registration failures for now

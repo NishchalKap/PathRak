@@ -5,9 +5,17 @@ from sklearn.cluster import DBSCAN
 from sklearn.preprocessing import LabelEncoder
 from scipy.spatial import cKDTree
 import os
+import threading
 from functools import lru_cache
+from data_config import DATA_DIR, DATA_MODE, data_metadata
 
-DATA_PATH = os.path.join(os.path.dirname(__file__), "data", "incidents.csv")
+DATA_PATH = str(DATA_DIR / "incidents.csv")
+MODEL = None
+DF = None
+INCIDENT_LE = None
+LIGHTING_LE = None
+KDTREE_COORDS = None
+_MODEL_LOCK = threading.Lock()
 
 # ── Load & train ──────────────────────────────────────────────────────────────
 
@@ -16,7 +24,7 @@ def load_and_train():
     if not os.path.exists(DATA_PATH):
         raise FileNotFoundError(
             f"Training data not found at: {DATA_PATH}\n"
-            "Please place incidents.csv inside the backend/data/ directory."
+            f"Please provide incidents.csv in the configured data directory: {DATA_DIR}."
         )
 
     df = pd.read_csv(DATA_PATH)
@@ -25,6 +33,21 @@ def load_and_train():
     missing = required_cols - set(df.columns)
     if missing:
         raise ValueError(f"incidents.csv is missing required columns: {missing}")
+
+    if len(df) < 5:
+        raise ValueError("incidents.csv must contain at least 5 valid rows.")
+
+    numeric_cols = ["hour", "day_of_week", "risk_level", "lat", "lng"]
+    for column in numeric_cols:
+        df[column] = pd.to_numeric(df[column], errors="raise")
+    if not df["hour"].between(0, 23).all():
+        raise ValueError("incidents.csv contains hour values outside 0..23.")
+    if not df["day_of_week"].between(0, 6).all():
+        raise ValueError("incidents.csv contains day_of_week values outside 0..6.")
+    if not df["risk_level"].between(1, 5).all():
+        raise ValueError("incidents.csv contains risk_level values outside 1..5.")
+    if not df["lat"].between(-90, 90).all() or not df["lng"].between(-180, 180).all():
+        raise ValueError("incidents.csv contains invalid coordinates.")
 
     # FIX: Use separate LabelEncoders so one does not overwrite the other
     incident_le = LabelEncoder()
@@ -43,18 +66,26 @@ def load_and_train():
     return model, df, incident_le, lighting_le
 
 
-MODEL, DF, INCIDENT_LE, LIGHTING_LE = load_and_train()
+def ensure_model_ready():
+    global MODEL, DF, INCIDENT_LE, LIGHTING_LE, KDTREE_COORDS
+    if MODEL is not None:
+        return MODEL, DF, INCIDENT_LE, LIGHTING_LE, KDTREE_COORDS
+
+    with _MODEL_LOCK:
+        if MODEL is not None:
+            return MODEL, DF, INCIDENT_LE, LIGHTING_LE, KDTREE_COORDS
+        MODEL, DF, INCIDENT_LE, LIGHTING_LE = load_and_train()
+        KDTREE_COORDS = cKDTree(DF[["lat", "lng"]].values)
+    return MODEL, DF, INCIDENT_LE, LIGHTING_LE, KDTREE_COORDS
 
 RISK_LABELS = ["Very Low", "Low", "Moderate", "High", "Critical"]
-
-# ── Build KDTree for fast spatial queries ──────────────────────────────────────
-KDTREE_COORDS = cKDTree(DF[["lat", "lng"]].values)
 
 # ── DBSCAN hotspot clustering ─────────────────────────────────────────────────
 
 @lru_cache(maxsize=1)
 def get_hotspot_clusters():
-    coords = DF[["lat", "lng"]].values
+    _, df, _, _, _ = ensure_model_ready()
+    coords = df[["lat", "lng"]].values
     coords_rad = np.radians(coords)
     db = DBSCAN(eps=0.5 / 6371, min_samples=2, algorithm="ball_tree", metric="haversine")
     labels = db.fit_predict(coords_rad)
@@ -64,7 +95,7 @@ def get_hotspot_clusters():
         if label == -1:
             continue
         mask = labels == label
-        cluster_points = DF[mask]
+        cluster_points = df[mask]
         clusters.append({
             "cluster_id": int(label),
             "center_lat": float(cluster_points["lat"].mean()),
@@ -79,17 +110,24 @@ def get_hotspot_clusters():
 
 @lru_cache(maxsize=2048)
 def predict_zone_risk(lat: float, lng: float, hour: int, day_of_week: int, lighting: str = "dim") -> dict:
+    model, df, _, lighting_le, kdtree_coords = ensure_model_ready()
     # FIX: Use LIGHTING_LE (not INCIDENT_LE) for lighting encoding; fall back gracefully
-    known_lightings = list(LIGHTING_LE.classes_)
+    known_lightings = list(lighting_le.classes_)
     if lighting not in known_lightings:
         lighting_enc = known_lightings.index("dim") if "dim" in known_lightings else 0
     else:
-        lighting_enc = int(LIGHTING_LE.transform([lighting])[0])
+        lighting_enc = int(lighting_le.transform([lighting])[0])
 
     # OPTIMIZED: Use KDTree for O(log n) nearest-neighbor lookup instead of O(n)
     k = 5
-    dists, indices = KDTREE_COORDS.query([lat, lng], k=k)
-    nearest_incident_encs = DF.iloc[indices]["incident_enc"].values
+    dists, indices = kdtree_coords.query([lat, lng], k=k)
+    nearest_distance_km = float(dists[0]) * 111.0
+    if nearest_distance_km > 25:
+        raise ValueError(
+            f"No incident-data coverage within 25 km of ({lat}, {lng}); "
+            f"nearest record is approximately {nearest_distance_km:.1f} km away."
+        )
+    nearest_incident_encs = df.iloc[indices]["incident_enc"].values
 
     features = pd.DataFrame({
         "incident_enc": nearest_incident_encs,
@@ -98,8 +136,8 @@ def predict_zone_risk(lat: float, lng: float, hour: int, day_of_week: int, light
         "lighting_enc": [lighting_enc] * k
     })
     
-    predicted_risks = MODEL.predict(features)
-    predicted_probas = MODEL.predict_proba(features)
+    predicted_risks = model.predict(features)
+    predicted_probas = model.predict_proba(features)
     
     # Apply Inverse Distance Weighting (IDW)
     d_i = dists
@@ -124,6 +162,8 @@ def predict_zone_risk(lat: float, lng: float, hour: int, day_of_week: int, light
         "hour": hour,
         "day_of_week": day_of_week,
         "lighting": lighting,
+        "coverage_distance_km": round(nearest_distance_km, 2),
+        **data_metadata(),
     }
 
 # ── Generate heatmap grid ─────────────────────────────────────────────────────
@@ -131,8 +171,9 @@ def predict_zone_risk(lat: float, lng: float, hour: int, day_of_week: int, light
 _HEATMAP_CACHE = {}  # Cache by (hour, day_of_week) tuple
 
 def generate_heatmap(center_lat: float, center_lng: float, hour: int, day_of_week: int) -> list:
+    model, df, _, lighting_le, kdtree_coords = ensure_model_ready()
     # OPTIMIZED: Check cache first (heatmap doesn't change within same hour)
-    cache_key = (hour, day_of_week)
+    cache_key = (round(center_lat, 2), round(center_lng, 2), hour, day_of_week, DATA_MODE)
     if cache_key in _HEATMAP_CACHE:
         return _HEATMAP_CACHE[cache_key]
     
@@ -148,26 +189,31 @@ def generate_heatmap(center_lat: float, center_lng: float, hour: int, day_of_wee
             except json.JSONDecodeError:
                 pass
 
-    BANGALORE_BOUNDS = {"lat_min": 12.73, "lat_max": 13.15, "lng_min": 77.45, "lng_max": 77.80}
-    MYSORE_BOUNDS = {"lat_min": 12.23, "lat_max": 12.38, "lng_min": 76.55, "lng_max": 76.73}
-    
-    cities = [BANGALORE_BOUNDS, MYSORE_BOUNDS]
-    
-    # OPTIMIZED: Increased grid step from 0.015 to 0.025 (~2.5km) for ~60% fewer points
+    # Build the heatmap around the requested location rather than a static city.
+    bounds = {
+        "lat_min": center_lat - 0.15,
+        "lat_max": center_lat + 0.15,
+        "lng_min": center_lng - 0.15,
+        "lng_max": center_lng + 0.15,
+    }
     GRID_STEP = 0.025
     
     coords = []
-    for bounds in cities:
-        for lat_val in np.arange(bounds["lat_min"], bounds["lat_max"], GRID_STEP):
-            for lng_val in np.arange(bounds["lng_min"], bounds["lng_max"], GRID_STEP):
-                coords.append([round(float(lat_val), 5), round(float(lng_val), 5)])
+    for lat_val in np.arange(bounds["lat_min"], bounds["lat_max"], GRID_STEP):
+        for lng_val in np.arange(bounds["lng_min"], bounds["lng_max"], GRID_STEP):
+            coords.append([round(float(lat_val), 5), round(float(lng_val), 5)])
                 
     if not coords:
         return []
         
     coords_np = np.array(coords)
     k = 5
-    dists, indices = KDTREE_COORDS.query(coords_np, k=k)
+    dists, indices = kdtree_coords.query(coords_np, k=k)
+    nearest_distance_km = float(np.min(dists)) * 111.0
+    if nearest_distance_km > 25:
+        raise ValueError(
+            f"No incident-data coverage within 25 km of ({center_lat}, {center_lng})."
+        )
     
     if hour >= 21 or hour <= 5:
         lighting = "none"
@@ -176,13 +222,13 @@ def generate_heatmap(center_lat: float, center_lng: float, hour: int, day_of_wee
     else:
         lighting = "good"
         
-    known_lightings = list(LIGHTING_LE.classes_)
+    known_lightings = list(lighting_le.classes_)
     if lighting not in known_lightings:
         lighting_enc = known_lightings.index("dim") if "dim" in known_lightings else 0
     else:
-        lighting_enc = int(LIGHTING_LE.transform([lighting])[0])
+        lighting_enc = int(lighting_le.transform([lighting])[0])
 
-    nearest_incident_encs = DF.iloc[indices.flatten()]["incident_enc"].values
+    nearest_incident_encs = df.iloc[indices.flatten()]["incident_enc"].values
     
     features = pd.DataFrame({
         "incident_enc": nearest_incident_encs,
@@ -191,7 +237,7 @@ def generate_heatmap(center_lat: float, center_lng: float, hour: int, day_of_wee
         "lighting_enc": [lighting_enc] * (len(coords) * k)
     })
     
-    predicted_risks = MODEL.predict(features).reshape(-1, k)
+    predicted_risks = model.predict(features).reshape(-1, k)
     w_i = 1.0 / (dists**2 + 1e-6)
     interpolated_risk = np.sum(w_i * predicted_risks, axis=1) / np.sum(w_i, axis=1)
     risks = np.round(interpolated_risk).astype(int)
@@ -260,4 +306,5 @@ def score_route(waypoints: list, hour: int, day_of_week: int) -> dict:
         "label": label,
         "avg_risk": round(avg_risk, 2),
         "zone_breakdown": scores,
+        **data_metadata(),
     }

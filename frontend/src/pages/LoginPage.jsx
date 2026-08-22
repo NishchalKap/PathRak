@@ -1,145 +1,66 @@
-import { useState } from "react";
-import { requestOTP, verifyOTP } from "../api";
+import { SignInButton, SignUpButton } from "@clerk/react";
 
-export default function LoginPage({ onLoginSuccess }) {
-  const [step, setStep] = useState(1);
-  const [phone, setPhone] = useState("");
-  const [otp, setOtp] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  const handleSendOTP = async (e) => {
-    e.preventDefault();
-    if (phone.length < 10) {
-      setError("Please enter a valid phone number.");
-      return;
-    }
-    setError("");
-    setLoading(true);
-    try {
-      await requestOTP(phone);
-      setStep(2);
-    } catch (err) {
-      setError("Failed to send OTP. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleVerifyOTP = async (e) => {
-    e.preventDefault();
-    if (otp.length !== 4) {
-      setError("Please enter the 4-digit OTP.");
-      return;
-    }
-    setError("");
-    setLoading(true);
-    try {
-      const res = await verifyOTP(phone, otp);
-      if (res.success) {
-        onLoginSuccess();
-      } else {
-        setError("Invalid OTP.");
-      }
-    } catch (err) {
-      setError("Invalid or expired OTP.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
+export default function LoginPage() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-pink-50 to-purple-50 dark:from-[#050510] dark:via-indigo-950 dark:to-[#0a0a1a] flex flex-col items-center justify-center p-4 font-['Outfit'] transition-colors duration-500">
-      {/* Background decoration */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none flex justify-center items-center">
-        <div className="w-[800px] h-[800px] bg-pink-400/30 dark:bg-pink-600/20 rounded-full blur-[120px] opacity-60 translate-y-[-20%]" />
-        <div className="absolute w-[600px] h-[600px] bg-violet-400/30 dark:bg-violet-600/20 rounded-full blur-[100px] opacity-50 translate-x-[20%] translate-y-[20%]" />
+    <main className="relative min-h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-rose-50 to-amber-50 dark:from-[#050510] dark:via-[#181026] dark:to-[#0a0a1a] px-4 py-10 font-['Outfit'] transition-colors duration-500">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -left-32 top-[-12rem] h-[34rem] w-[34rem] rounded-full bg-pink-400/25 blur-[100px] dark:bg-pink-600/20" />
+        <div className="absolute -right-24 bottom-[-12rem] h-[32rem] w-[32rem] rounded-full bg-amber-300/30 blur-[110px] dark:bg-violet-600/20" />
+        <div className="absolute inset-0 opacity-[0.08] [background-image:linear-gradient(rgba(15,23,42,.35)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,.35)_1px,transparent_1px)] [background-size:40px_40px] dark:opacity-[0.06]" />
       </div>
 
-      <div className="relative z-10 w-full max-w-md">
-        <div className="text-center mb-10">
-          <div className="text-5xl mb-4 drop-shadow-[0_0_15px_rgba(236,72,153,0.5)] dark:drop-shadow-[0_0_15px_rgba(236,72,153,0.8)] animate-pulse-slow">🛡️</div>
-          <h1 className="text-4xl font-bold text-slate-800 dark:text-white tracking-tight">PathRak</h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-2 tracking-widest uppercase text-xs font-semibold">Predict. Alert. Protect.</p>
-        </div>
-
-        <div className="glass-panel rounded-3xl p-8">
-          <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-6 tracking-wide">
-            {step === 1 ? "Welcome Back" : "Verify Phone Number"}
-          </h2>
-
-          {error && (
-            <div className="mb-4 p-3 rounded-xl bg-red-900/30 border border-red-500/30 text-red-400 text-sm text-center">
-              {error}
+      <div className="relative z-10 mx-auto flex min-h-[calc(100vh-5rem)] max-w-6xl items-center">
+        <section className="grid w-full overflow-hidden rounded-[2rem] border border-black/10 bg-white/65 shadow-2xl shadow-rose-900/10 backdrop-blur-2xl dark:border-white/10 dark:bg-black/25 dark:shadow-black/40 lg:grid-cols-[1.15fr_.85fr]">
+          <div className="flex flex-col justify-between gap-12 p-8 sm:p-12 lg:p-16">
+            <div className="flex items-center gap-3">
+              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-pink-500 to-rose-600 text-2xl text-white shadow-lg shadow-pink-500/25">🛡️</div>
+              <div>
+                <p className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">PathRak</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">Predict. Alert. Protect.</p>
+              </div>
             </div>
-          )}
 
-          {step === 1 ? (
-            <form onSubmit={handleSendOTP} className="space-y-4">
-              <div>
-                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                    Phone Number
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500">📞</span>
-                    <input
-                      type="tel"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      placeholder="e.g. +91 9876543210"
-                      className="w-full bg-slate-100/50 dark:bg-white/5 border border-black/10 dark:border-white/10 text-slate-800 dark:text-white rounded-xl py-3.5 pl-11 pr-4 focus:outline-none focus:ring-2 focus:ring-pink-400/50 dark:focus:ring-pink-500/50 focus:bg-white dark:focus:bg-white/10 transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500 font-medium"
-                    />
-                </div>
-              </div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full glass-button text-white font-bold tracking-wide py-3.5 rounded-xl transition-all disabled:opacity-70 disabled:cursor-not-allowed mt-2"
-              >
-                {loading ? "Sending OTP..." : "Get OTP"}
-              </button>
-              <p className="text-center text-xs text-slate-500 mt-4">
-                For demo purposes, a mock OTP of <span className="font-mono text-pink-500 dark:text-pink-400">1432</span> will be generated.
+            <div>
+              <p className="mb-4 text-xs font-bold uppercase tracking-[0.28em] text-pink-600 dark:text-pink-400">Personal safety, always within reach</p>
+              <h1 className="max-w-2xl text-4xl font-bold leading-[1.05] tracking-tight text-slate-900 sm:text-6xl dark:text-white">
+                Move through your city with more confidence.
+              </h1>
+              <p className="mt-6 max-w-xl text-base leading-7 text-slate-600 sm:text-lg dark:text-slate-300">
+                Explore safer routes, monitor journeys, and keep emergency details ready when every second matters.
               </p>
-            </form>
-          ) : (
-            <form onSubmit={handleVerifyOTP} className="space-y-4">
-              <div>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-                  We've sent a 4-digit verification code to <span className="text-slate-900 dark:text-white">{phone}</span>.
-                </p>
-                <div className="mb-8">
-                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2 text-center">
-                  Enter 4-digit code
-                </label>
-                <input
-                  type="text"
-                  maxLength={4}
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-                  placeholder="1432"
-                  className="w-full bg-slate-100/50 dark:bg-white/5 border border-black/10 dark:border-white/10 text-slate-800 dark:text-white rounded-xl py-4 px-4 text-center text-3xl tracking-[0.5em] font-mono focus:outline-none focus:ring-2 focus:ring-pink-400/50 dark:focus:ring-pink-500/50 focus:bg-white dark:focus:bg-white/10 transition-all placeholder:text-slate-400 dark:placeholder:text-slate-600"
-                />
+            </div>
+
+            <div className="grid gap-3 text-sm text-slate-600 sm:grid-cols-3 dark:text-slate-300">
+              <p className="rounded-2xl border border-black/5 bg-white/50 p-4 dark:border-white/10 dark:bg-white/5">Live safety insights</p>
+              <p className="rounded-2xl border border-black/5 bg-white/50 p-4 dark:border-white/10 dark:bg-white/5">Journey monitoring</p>
+              <p className="rounded-2xl border border-black/5 bg-white/50 p-4 dark:border-white/10 dark:bg-white/5">Fast SOS support</p>
+            </div>
+          </div>
+
+          <div className="flex items-center border-t border-black/10 bg-slate-950 p-8 text-white dark:border-white/10 lg:border-l lg:border-t-0 lg:p-12">
+            <div className="w-full">
+              <p className="text-sm font-semibold uppercase tracking-[0.22em] text-pink-300">Secure access</p>
+              <h2 className="mt-3 text-3xl font-bold">Your safety space is private.</h2>
+              <p className="mt-4 leading-7 text-slate-300">Sign in to continue, or create your PathRak account in a few steps.</p>
+
+              <div className="mt-9 space-y-3">
+                <SignUpButton mode="modal">
+                  <button className="w-full rounded-2xl bg-gradient-to-r from-pink-500 to-rose-500 px-5 py-4 text-sm font-bold text-white shadow-lg shadow-pink-500/20 transition hover:-translate-y-0.5 hover:shadow-pink-500/35 focus:outline-none focus:ring-2 focus:ring-pink-300">
+                    Create account
+                  </button>
+                </SignUpButton>
+                <SignInButton mode="modal">
+                  <button className="w-full rounded-2xl border border-white/15 bg-white/10 px-5 py-4 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-white/40">
+                    Sign in
+                  </button>
+                </SignInButton>
               </div>
-              </div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full glass-button text-white font-bold tracking-wide py-3.5 rounded-xl transition-all disabled:opacity-70 disabled:cursor-not-allowed mt-2"
-              >
-                {loading ? "Verifying..." : "Verify & Login"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setStep(1)}
-                className="w-full text-slate-400 text-sm hover:text-white transition-colors py-2"
-              >
-                Use a different number
-              </button>
-            </form>
-          )}
-        </div>
+
+              <p className="mt-6 text-xs leading-5 text-slate-400">Authentication is securely managed by Clerk. Your emergency profile stays scoped to your signed-in account on this device.</p>
+            </div>
+          </div>
+        </section>
       </div>
-    </div>
+    </main>
   );
 }

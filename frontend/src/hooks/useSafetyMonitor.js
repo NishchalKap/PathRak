@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { triggerSOS, predictZoneRisk, notifyRisk, notifyBattery } from "../api";
+import { triggerSOS, expireSafeWalk, predictZoneRisk, notifyRisk, notifyBattery } from "../api";
+import { getBackendWeekday, isSafeWalkDue } from "../utils/safetyLogic";
 
 export function useSafetyMonitor(userInfo, currentPos) {
   // SafeWalk State
@@ -7,6 +8,8 @@ export function useSafetyMonitor(userInfo, currentPos) {
   const [swEtaTime, setSwEtaTime] = useState(null);
   const [swDestination, setSwDestination] = useState("");
   const [swTimeLeft, setSwTimeLeft] = useState(0);
+  const [swAlertResult, setSwAlertResult] = useState(null);
+  const [swMessage, setSwMessage] = useState("");
 
   // SmartCheck State
   const [scStatus, setScStatus] = useState("idle");
@@ -33,15 +36,29 @@ export function useSafetyMonitor(userInfo, currentPos) {
         const diff = Math.max(0, Math.floor((swEtaTime - now) / 1000));
         setSwTimeLeft(diff);
 
-        if (diff === 0 && !handledSosRef.current.sw) {
+        if (isSafeWalkDue({
+          active: swActive,
+          etaTime: swEtaTime,
+          nowMs: now.getTime(),
+          alreadyHandled: handledSosRef.current.sw,
+        })) {
           handledSosRef.current.sw = true;
-          if (userInfo && currentPos) {
-            triggerSOS(
-              currentPos[0], currentPos[1],
-              userInfo.user_id, userInfo.name,
-              "SafeWalk ETA expired without confirmation.",
-              userInfo.emergency_contact, userInfo.medical_details
-            ).catch(() => {});
+          setSwMessage("SafeWalk ETA expired. Recording emergency alert.");
+          if (userInfo?.user_id) {
+            expireSafeWalk(userInfo.user_id)
+              .then((res) => {
+                if (res.status === "alerted" || res.status === "already_alerted") {
+                  setSwAlertResult(res.alert);
+                  setSwMessage("SafeWalk emergency alert recorded. Check dispatch status below.");
+                } else {
+                  setSwMessage(res.detail || `SafeWalk alert status: ${res.status}.`);
+                }
+              })
+              .catch((error) => {
+                setSwMessage(`SafeWalk ETA expired, but the alert could not be recorded: ${error.message}`);
+              });
+          } else {
+            setSwMessage("SafeWalk ETA expired, but current location was unavailable.");
           }
         }
       }
@@ -79,10 +96,11 @@ export function useSafetyMonitor(userInfo, currentPos) {
     const checkRisk = async () => {
       try {
         const now = new Date();
-        const data = await predictZoneRisk(currentPos[0], currentPos[1], now.getHours(), now.getDay(), "dim");
+        const data = await predictZoneRisk(currentPos[0], currentPos[1], now.getHours(), getBackendWeekday(now), "dim");
+        if (data.data_mode !== "REAL") return;
         
         // If risk is High and we haven't notified in the last 5 minutes (300,000 ms)
-        if (data.risk_level === "High" && (now.getTime() - lastNotifiedRef.current > 300000)) {
+        if (data.risk_level >= 4 && (now.getTime() - lastNotifiedRef.current > 300000)) {
           lastNotifiedRef.current = now.getTime();
           
           if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 500]);
@@ -159,6 +177,8 @@ export function useSafetyMonitor(userInfo, currentPos) {
     setSwEtaTime(null);
     setSwTimeLeft(0);
     setSwDestination("");
+    setSwAlertResult(null);
+    setSwMessage("");
 
     setScStatus("safe");
     setScMessage("You are marked safe. No alert was sent.");
@@ -168,16 +188,34 @@ export function useSafetyMonitor(userInfo, currentPos) {
     if (intervalRef.current) clearInterval(intervalRef.current);
   };
 
+  const resetSafeWalk = () => {
+    setSwActive(false);
+    setSwEtaTime(null);
+    setSwTimeLeft(0);
+    setSwDestination("");
+    setSwAlertResult(null);
+    setSwMessage("");
+    handledSosRef.current.sw = false;
+  };
+
   return {
     sw: {
       active: swActive,
-      setActive: setSwActive,
+      setActive: (active) => {
+        handledSosRef.current.sw = false;
+        setSwActive(active);
+      },
       etaTime: swEtaTime,
       setEtaTime: setSwEtaTime,
       destination: swDestination,
       setDestination: setSwDestination,
       timeLeft: swTimeLeft,
       setTimeLeft: setSwTimeLeft,   // ← exposed so SafeWalkPage can set initial value
+      alertResult: swAlertResult,
+      setAlertResult: setSwAlertResult,
+      message: swMessage,
+      setMessage: setSwMessage,
+      reset: resetSafeWalk,
     },
     sc: {
       status: scStatus,

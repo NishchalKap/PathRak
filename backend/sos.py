@@ -1,20 +1,39 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import random
 import csv
 import math
 from pathlib import Path
 import os
+import sys
 from twilio.rest import Client
+from data_config import DATA_DIR, data_metadata
 
 # ── Load full police station dataset from CSV ─────────────────────────────────
-POLICE_STATIONS_FILE = Path(__file__).resolve().parent / "data" / "police_stations.csv"
+POLICE_STATIONS_FILE = DATA_DIR / "police_stations.csv"
+
+def log_runtime(message: str) -> None:
+    """Write console output without assuming a Unicode-capable terminal."""
+    text = str(message)
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    try:
+        sys.stdout.write(text.encode(encoding, errors="replace").decode(encoding) + "\n")
+    except Exception:
+        print(text.encode("ascii", errors="replace").decode("ascii"))
+
+
+def format_phone_number(phone: str) -> str | None:
+    normalized = "".join(c for c in phone if c.isdigit() or c == "+")
+    digits = normalized[1:] if normalized.startswith("+") else ""
+    if not digits.isdigit() or not 8 <= len(digits) <= 15:
+        return None
+    return f"+{digits}"
 
 def load_police_stations() -> list:
     stations = []
     if not POLICE_STATIONS_FILE.exists():
         # FIX: Warn clearly instead of silently returning empty list — SOS with no
         # stations would produce a misleading crash in find_nearest_station()
-        print(
+        log_runtime(
             f"[WARNING] police_stations.csv not found at {POLICE_STATIONS_FILE}. "
             "SOS dispatch will be unavailable until this file is provided."
         )
@@ -32,7 +51,7 @@ def load_police_stations() -> list:
                     "contact": row.get("contact", ""),
                 })
             except (KeyError, ValueError) as e:
-                print(f"[WARNING] Skipping malformed police station row: {row} — {e}")
+                log_runtime(f"[WARNING] Skipping malformed police station row: {row} - {e}")
     return stations
 
 POLICE_STATIONS = load_police_stations()
@@ -58,22 +77,30 @@ def find_nearest_station(lat: float, lng: float) -> dict:
     # FIX: Guard against empty station list — previously would crash with ValueError
     if not POLICE_STATIONS:
         raise ValueError(
-            "No police stations loaded. Please add backend/data/police_stations.csv."
+            f"No police stations loaded. Please provide {POLICE_STATIONS_FILE}."
         )
     nearest = min(POLICE_STATIONS, key=lambda s: haversine_dist(lat, lng, s["lat"], s["lng"]))
     dist = haversine_dist(lat, lng, nearest["lat"], nearest["lng"])
+    if dist > 50:
+        raise ValueError(
+            f"No police-station reference data within 50 km of ({lat}, {lng}); "
+            f"nearest row is {dist:.1f} km away."
+        )
     return {**nearest, "distance_km": round(dist, 2)}
 
 def find_all_stations(lat: float, lng: float) -> list:
     if not POLICE_STATIONS:
         raise ValueError(
-            "No police stations loaded. Please add backend/data/police_stations.csv."
+            f"No police stations loaded. Please provide {POLICE_STATIONS_FILE}."
         )
     stations = [
         {**s, "distance_km": round(haversine_dist(lat, lng, s["lat"], s["lng"]), 2)}
         for s in POLICE_STATIONS
     ]
-    return sorted(stations, key=lambda s: s["distance_km"])
+    nearby = [station for station in stations if station["distance_km"] <= 50]
+    if not nearby:
+        raise ValueError(f"No police-station reference data within 50 km of ({lat}, {lng}).")
+    return sorted(nearby, key=lambda s: s["distance_km"])
 
 # ── SOS trigger ───────────────────────────────────────────────────────────────
 
@@ -89,10 +116,7 @@ def trigger_sos(
     from users import find_users_within_radius
     station   = find_nearest_station(lat, lng)   # raises ValueError if no stations
     alert_id  = f"SOS-{random.randint(10000, 99999)}"
-    timestamp = datetime.now().isoformat()
-
-    # FIX: Estimate response time more realistically (30 km/h average city speed)
-    estimated_response = round((station["distance_km"] / 30) * 60, 1)  # minutes
+    timestamp = datetime.now(timezone.utc).isoformat()
 
     nearby_helpers = find_users_within_radius(lat, lng, exclude_user_id=user_id, radius_km=0.5)
 
@@ -107,40 +131,36 @@ def trigger_sos(
         "medical_details": medical_details,
         "nearest_station": station,
         "nearby_helpers": nearby_helpers,
-        "status": "DISPATCHED",
-        "estimated_response_min": estimated_response,
+        "status": "RECORDED",
+        "police_dispatch": "NOT_CONFIGURED",
+        "station_match_only": True,
+        "emergency_contact_notification": "NOT_REQUESTED" if not emergency_contact else "PROVIDER_NOT_CONFIGURED",
         "live_location_url": f"https://maps.google.com/?q={lat},{lng}",
+        **data_metadata(),
     }
 
     SOS_LOG.append(alert)
 
-    # In production: send SMS via Twilio / push alert to police dashboard
-    print(
-        f"[SOS ALERT] {alert_id} → {station['name']} | "
-        f"User: {user_name} | Loc: {lat},{lng} | "
-        f"ETA: ~{estimated_response} min"
+    log_runtime(
+        f"[SOS RECORDED] {alert_id} | nearest station reference: {station['name']} | "
+        f"User: {user_name} | Loc: {lat},{lng}"
     )
     
     if nearby_helpers:
-        print(f"[COMMUNITY GEO-FENCE] Alerted {len(nearby_helpers)} nearby app users within 500m of {user_name}.")
+        log_runtime(f"[COMMUNITY LOOKUP] Matched {len(nearby_helpers)} nearby app users within 500m of {user_name}; no push provider is configured.")
         for h in nearby_helpers:
-            print(f"  → Pushing urgent notification to {h['name']} ({h['distance_km']*1000:.0f}m away)")
+            log_runtime(f"  -> Matched {h['name']} ({h['distance_km']*1000:.0f}m away)")
 
     # Send Real SMS via Twilio
     if emergency_contact:
-        def format_phone_number(phone: str) -> str:
-            phone = "".join(c for c in phone if c.isdigit() or c == "+")
-            if not phone.startswith("+"):
-                # Default to +91 (India) for Bangalore-based app
-                phone = "+91" + phone.lstrip("0")
-            return phone
-            
         formatted_contact = format_phone_number(emergency_contact)
         twilio_sid = os.getenv("TWILIO_ACCOUNT_SID")
         twilio_auth = os.getenv("TWILIO_AUTH_TOKEN")
         twilio_phone = os.getenv("TWILIO_PHONE_NUMBER")
         
-        if twilio_sid and twilio_auth and twilio_phone:
+        if not formatted_contact:
+            alert["emergency_contact_notification"] = "INVALID_CONTACT"
+        elif twilio_sid and twilio_auth and twilio_phone:
             try:
                 client = Client(twilio_sid, twilio_auth)
                 sms_body = f"URGENT: {user_name} triggered an SOS! Message: {message}. Live Location: https://maps.google.com/?q={lat},{lng}"
@@ -149,9 +169,14 @@ def trigger_sos(
                     from_=twilio_phone,
                     to=formatted_contact
                 )
-                print(f"[TWILIO] Sent SOS SMS to {formatted_contact}. SID: {msg.sid}")
+                log_runtime(f"[TWILIO] Sent SOS SMS to {formatted_contact}. SID: {msg.sid}")
+                alert["emergency_contact_notification"] = "SENT"
+                alert["notification_provider"] = "TWILIO"
+                alert["notification_id"] = msg.sid
             except Exception as e:
-                print(f"[TWILIO ERROR] Failed to send SOS SMS: {e}")
+                log_runtime(f"[TWILIO ERROR] Failed to send SOS SMS: {e}")
+                alert["emergency_contact_notification"] = "FAILED"
+                alert["notification_provider"] = "TWILIO"
 
     return alert
 
@@ -159,20 +184,17 @@ def send_risk_warning_sms(user_name: str, emergency_contact: str, lat: float, ln
     if not emergency_contact:
         return False
         
-    def format_phone_number(phone: str) -> str:
-        phone = "".join(c for c in phone if c.isdigit() or c == "+")
-        if not phone.startswith("+"):
-            phone = "+91" + phone.lstrip("0")
-        return phone
-        
     formatted_contact = format_phone_number(emergency_contact)
+    if not formatted_contact:
+        log_runtime("[TWILIO ERROR] Emergency contact must be in E.164 format.")
+        return False
         
     twilio_sid = os.getenv("TWILIO_ACCOUNT_SID")
     twilio_auth = os.getenv("TWILIO_AUTH_TOKEN")
     twilio_phone = os.getenv("TWILIO_PHONE_NUMBER")
     
     if not (twilio_sid and twilio_auth and twilio_phone):
-        print("[TWILIO ERROR] Missing Twilio credentials in environment.")
+        log_runtime("[TWILIO ERROR] Missing Twilio credentials in environment.")
         return False
         
     try:
@@ -183,30 +205,27 @@ def send_risk_warning_sms(user_name: str, emergency_contact: str, lat: float, ln
             from_=twilio_phone,
             to=formatted_contact
         )
-        print(f"[TWILIO] Sent High-Risk Warning SMS to {formatted_contact}. SID: {msg.sid}")
+        log_runtime(f"[TWILIO] Sent High-Risk Warning SMS to {formatted_contact}. SID: {msg.sid}")
         return True
     except Exception as e:
-        print(f"[TWILIO ERROR] Failed to send High-Risk Warning SMS: {e}")
+        log_runtime(f"[TWILIO ERROR] Failed to send High-Risk Warning SMS: {e}")
         return False
 
 def send_battery_warning_sms(user_name: str, emergency_contact: str, lat: float, lng: float, battery_level: int) -> bool:
     if not emergency_contact:
         return False
         
-    def format_phone_number(phone: str) -> str:
-        phone = "".join(c for c in phone if c.isdigit() or c == "+")
-        if not phone.startswith("+"):
-            phone = "+91" + phone.lstrip("0")
-        return phone
-        
     formatted_contact = format_phone_number(emergency_contact)
+    if not formatted_contact:
+        log_runtime("[TWILIO ERROR] Emergency contact must be in E.164 format.")
+        return False
         
     twilio_sid = os.getenv("TWILIO_ACCOUNT_SID")
     twilio_auth = os.getenv("TWILIO_AUTH_TOKEN")
     twilio_phone = os.getenv("TWILIO_PHONE_NUMBER")
     
     if not (twilio_sid and twilio_auth and twilio_phone):
-        print("[TWILIO ERROR] Missing Twilio credentials in environment.")
+        log_runtime("[TWILIO ERROR] Missing Twilio credentials in environment.")
         return False
         
     try:
@@ -217,10 +236,10 @@ def send_battery_warning_sms(user_name: str, emergency_contact: str, lat: float,
             from_=twilio_phone,
             to=formatted_contact
         )
-        print(f"[TWILIO] Sent Low Battery Warning SMS to {formatted_contact}. SID: {msg.sid}")
+        log_runtime(f"[TWILIO] Sent Low Battery Warning SMS to {formatted_contact}. SID: {msg.sid}")
         return True
     except Exception as e:
-        print(f"[TWILIO ERROR] Failed to send Low Battery Warning SMS: {e}")
+        log_runtime(f"[TWILIO ERROR] Failed to send Low Battery Warning SMS: {e}")
         return False
 
 def get_sos_log() -> list:

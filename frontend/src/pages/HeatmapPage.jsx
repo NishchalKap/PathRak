@@ -10,6 +10,7 @@ import {
   reportDangerPin, getDangerPins, getSafeSpots, getIncidentHistory,
 } from "../api";
 import "leaflet/dist/leaflet.css";
+import { getBackendWeekday } from "../utils/safetyLogic";
 
 const RISK_COLORS = {
   1: "#2563eb",
@@ -187,17 +188,25 @@ function MapClickHandler({ onClick }) {
 /* ─────────────────────────────────────────────
    Constants
 ───────────────────────────────────────────── */
-const DEFAULT_CENTER = [12.9716, 77.5946];
+const MAP_PLACEHOLDER = [20, 0];
 
-const DATA_BOUNDS = [
-  [DEFAULT_CENTER[0] - 0.08, DEFAULT_CENTER[1] - 0.08],
-  [DEFAULT_CENTER[0] + 0.08, DEFAULT_CENTER[1] + 0.08],
+const getDataBounds = (center) => [
+  [center[0] - 0.15, center[1] - 0.15],
+  [center[0] + 0.15, center[1] + 0.15],
 ];
+
+function RecenterMap({ center }) {
+  const map = useMap();
+  useEffect(() => {
+    if (center) map.setView(center, 14);
+  }, [center, map]);
+  return null;
+}
 
 /* ─────────────────────────────────────────────
    Main Page
 ───────────────────────────────────────────── */
-export default function HeatmapPage({ userInfo, theme }) {
+export default function HeatmapPage({ userInfo, currentPos, locationError, theme }) {
   const [points,        setPoints]        = useState([]);
   const [hotspots,      setHotspots]      = useState([]);
   const [selectedHour,  setSelectedHour]  = useState(new Date().getHours());
@@ -205,7 +214,6 @@ export default function HeatmapPage({ userInfo, theme }) {
   const [currentTime,   setCurrentTime]   = useState(new Date());
   const [loading,       setLoading]       = useState(false);
   const [error,         setError]         = useState("");
-  const [currentPos,    setCurrentPos]    = useState(null);
   const [nearestHelper, setNearestHelper] = useState(null);
   const [homeSaved,     setHomeSaved]     = useState(false);
   const [dangerPins,    setDangerPins]    = useState([]);
@@ -216,32 +224,39 @@ export default function HeatmapPage({ userInfo, theme }) {
   const [safeSpots,     setSafeSpots]     = useState([]);
   const [incidents,     setIncidents]     = useState([]);
   const [showFeed,      setShowFeed]      = useState(false);
+  const [dataMode,      setDataMode]      = useState(null);
 
   const fetchHeatmap = useCallback(async () => {
+    if (!currentPos) {
+      setError(locationError || "Live GPS is required to load safety data for your area.");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
       const [hm, hs, dp, inc] = await Promise.all([
-        getHeatmap(DEFAULT_CENTER[0], DEFAULT_CENTER[1], appliedHour, new Date().getDay()),
+        getHeatmap(currentPos[0], currentPos[1], appliedHour, getBackendWeekday()),
         getHotspots(),
         getDangerPins(),
         getIncidentHistory(),
       ]);
       setPoints(hm.points || []);
+      setDataMode(hm.data_mode || null);
       setHotspots(hs.clusters || []);
       setDangerPins(dp || []);
       setIncidents(inc.incidents || []);
-    } catch {
-      setError("Could not load heatmap. Is the backend running?");
+    } catch (fetchError) {
+      setError(fetchError.message || "Could not load heatmap.");
     } finally {
       setLoading(false);
     }
-  }, [appliedHour]);
+  }, [appliedHour, currentPos, locationError]);
 
   useEffect(() => { fetchHeatmap(); }, [fetchHeatmap]);
   useEffect(() => {
-    setHomeSaved(Boolean(localStorage.getItem("pathrak_home_location") ?? localStorage.getItem("safeher_home_location")));
-  }, []);
+    const homeStorageKey = userInfo?.user_id ? `pathrak_home_location:${userInfo.user_id}` : null;
+    setHomeSaved(Boolean(homeStorageKey && localStorage.getItem(homeStorageKey)));
+  }, [userInfo?.user_id]);
 
   const currentHour      = currentTime.getHours();
   const currentTimeLabel = currentTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -250,15 +265,6 @@ export default function HeatmapPage({ userInfo, theme }) {
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 60_000);
     return () => clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => setCurrentPos([pos.coords.latitude, pos.coords.longitude]),
-        () => {},
-      );
-    }
   }, []);
 
   // Removed buggy auto-reset effect
@@ -303,7 +309,8 @@ export default function HeatmapPage({ userInfo, theme }) {
     if (newVal && safeSpots.length === 0) {
       setLoading(true);
       try {
-        const res = await getSafeSpots(DEFAULT_CENTER[0], DEFAULT_CENTER[1], 4000);
+        if (!currentPos) throw new Error("Live GPS is unavailable.");
+        const res = await getSafeSpots(currentPos[0], currentPos[1], 4000);
         setSafeSpots(res.spots || []);
       } catch {
         alert("Failed to load safe spots");
@@ -380,6 +387,11 @@ export default function HeatmapPage({ userInfo, theme }) {
       {error && (
         <div className="px-4 py-3 rounded-lg bg-red-900/40 border border-red-500/40 text-red-300 text-sm">{error}</div>
       )}
+      {dataMode === "DEMO" && (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-900/20 px-4 py-3 text-sm text-amber-200">
+          Demo data: synthetic incidents, not real-world safety statistics.
+        </div>
+      )}
 
       {/* Legend */}
       <div className="flex gap-3 flex-wrap">
@@ -412,12 +424,11 @@ export default function HeatmapPage({ userInfo, theme }) {
       {/* Map */}
       <div className="relative flex-1 rounded-2xl overflow-hidden border border-black/10 dark:border-slate-700 h-[420px]">
         <MapContainer
-          center={DEFAULT_CENTER}
+          center={currentPos || MAP_PLACEHOLDER}
           zoom={14}
-          maxBounds={DATA_BOUNDS}
-          maxBoundsViscosity={1}
           style={{ height: "420px", width: "100%" }}
         >
+          <RecenterMap center={currentPos} />
           <TileLayer
             url={theme === "dark" ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png" : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"}
             attribution='&copy; OpenStreetMap &copy; CartoDB'
@@ -425,8 +436,8 @@ export default function HeatmapPage({ userInfo, theme }) {
           />
 
           {/* Grey base for the available data area before risk colors load */}
-          <Rectangle
-            bounds={DATA_BOUNDS}
+          {currentPos && <Rectangle
+            bounds={getDataBounds(currentPos)}
             pathOptions={{
               color: "transparent",
               fillColor: "#475569",
@@ -434,7 +445,7 @@ export default function HeatmapPage({ userInfo, theme }) {
               weight: 0,
             }}
             interactive={false}
-          />
+          />}
 
           <MapClickHandler onClick={handleMapClick} />
 

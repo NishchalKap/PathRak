@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { UserButton, useUser } from "@clerk/react";
 import HeatmapPage  from "./pages/HeatmapPage";
 import RoutePage    from "./pages/RoutePage";
 import LightingPage from "./pages/LightingPage";
@@ -11,11 +12,6 @@ import LoginPage    from "./pages/LoginPage";
 import { registerUser } from "./api";
 import { useSafetyMonitor } from "./hooks/useSafetyMonitor";
 
-const AUTH_TOKEN_KEY = "pathrak_auth_token";
-const USER_INFO_KEY = "pathrak_user_info";
-const LEGACY_AUTH_TOKEN_KEY = "safeher_auth_token";
-const LEGACY_USER_INFO_KEY = "safeher_user_info";
-
 const NAV = [
   { id: "start",      label: "Profile Setup",      icon: "👤",  desc: "Save your SOS info" },
   { id: "heatmap",    label: "Safety Heatmap",    icon: "🗺️",  desc: "AI-predicted risk zones" },
@@ -23,19 +19,21 @@ const NAV = [
   { id: "safewalk",   label: "Safe Monitoring",    icon: "🛡️", desc: "SafeWalk & Smart Check" },
   { id: "lighting",   label: "Smart Lighting",     icon: "💡",  desc: "Working & broken status" },
   { id: "fakecall",   label: "Fake Call",          icon: "📞",  desc: "Simulate an incoming call" },
-  { id: "sos",        label: "SOS Alert",          icon: "🆘",  desc: "Emergency dispatch" },
+  { id: "sos",        label: "SOS Alert",          icon: "🆘",  desc: "Record emergency alert" },
 ];
 
 export default function App() {
+  const { isLoaded, isSignedIn, user } = useUser();
   const [page, setPage] = useState("start");
   const [userInfo, setUserInfo] = useState(null);
   const [currentPos, setCurrentPos] = useState(null);
+  const [locationError, setLocationError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [installed, setInstalled] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "dark");
+  const profileStorageKey = user?.id ? `pathrak_user_info:${user.id}` : null;
 
   useEffect(() => {
     if (theme === "dark") {
@@ -54,48 +52,71 @@ export default function App() {
   const currentPage = NAV.find((item) => item.id === page) ?? NAV[0];
 
   useEffect(() => {
-    const legacyAuthStatus = localStorage.getItem(LEGACY_AUTH_TOKEN_KEY);
-    const authStatus = localStorage.getItem(AUTH_TOKEN_KEY) ?? legacyAuthStatus;
-    if (authStatus) {
-      setIsAuthenticated(true);
-      if (!localStorage.getItem(AUTH_TOKEN_KEY)) {
-        localStorage.setItem(AUTH_TOKEN_KEY, authStatus);
-      }
+    localStorage.removeItem("pathrak_auth_token");
+    localStorage.removeItem("safeher_auth_token");
+
+    if (!isLoaded || !isSignedIn || !profileStorageKey) {
+      setUserInfo(null);
+      setPage("start");
+      return;
     }
 
-    const legacyUserInfo = localStorage.getItem(LEGACY_USER_INFO_KEY);
-    const stored = localStorage.getItem(USER_INFO_KEY) ?? legacyUserInfo;
+    const stored = localStorage.getItem(profileStorageKey);
     if (stored) {
       try {
         const parsed = JSON.parse(stored);
-        if (!parsed.user_id) {
-          parsed.user_id = crypto.randomUUID();
-          localStorage.setItem(USER_INFO_KEY, JSON.stringify(parsed));
-        } else if (!localStorage.getItem(USER_INFO_KEY)) {
-          localStorage.setItem(USER_INFO_KEY, JSON.stringify(parsed));
-        }
+        parsed.user_id = user.id;
+        localStorage.setItem(profileStorageKey, JSON.stringify(parsed));
         setUserInfo(parsed);
         setPage("heatmap");
       } catch {
-        localStorage.removeItem(USER_INFO_KEY);
+        localStorage.removeItem(profileStorageKey);
+        setUserInfo(null);
+        setPage("start");
       }
+    } else {
+      setUserInfo(null);
+      setPage("start");
     }
-
-    localStorage.removeItem(LEGACY_AUTH_TOKEN_KEY);
-    localStorage.removeItem(LEGACY_USER_INFO_KEY);
-  }, []);
+  }, [isLoaded, isSignedIn, profileStorageKey, user?.id]);
 
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => setCurrentPos([pos.coords.latitude, pos.coords.longitude]),
-        () => {},
-      );
+    if (!isSignedIn) {
+      setCurrentPos(null);
+      setLocationError("");
+      return undefined;
     }
-  }, []);
+
+    if (!navigator.geolocation) {
+      setLocationError("This browser does not support geolocation.");
+      return undefined;
+    }
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        setCurrentPos([pos.coords.latitude, pos.coords.longitude]);
+        setLocationError("");
+      },
+      (error) => {
+        const messages = {
+          1: "Location permission denied. Enable it in browser settings to use safety features.",
+          2: "Live GPS is unavailable. Check that device location is enabled.",
+          3: "Live GPS request timed out. Please try again.",
+        };
+        setLocationError(messages[error.code] || "Live GPS is unavailable.");
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
+      },
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [isSignedIn]);
 
   useEffect(() => {
-    if (userInfo && currentPos) {
+    if (isSignedIn && userInfo && currentPos) {
       registerUser(
         userInfo.user_id,
         userInfo.name,
@@ -105,7 +126,7 @@ export default function App() {
         currentPos[1],
       ).catch(() => {});
     }
-  }, [userInfo, currentPos]);
+  }, [isSignedIn, userInfo, currentPos]);
 
   useEffect(() => {
     const promptHandler = (event) => {
@@ -119,7 +140,7 @@ export default function App() {
     window.addEventListener("appinstalled", installedHandler);
     
     // Request notification permission for High-Risk Zone alerts
-    if ("Notification" in window && Notification.permission === "default") {
+    if (isSignedIn && "Notification" in window && Notification.permission === "default") {
       Notification.requestPermission();
     }
 
@@ -127,7 +148,7 @@ export default function App() {
       window.removeEventListener("beforeinstallprompt", promptHandler);
       window.removeEventListener("appinstalled", installedHandler);
     };
-  }, []);
+  }, [isSignedIn]);
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.innerWidth < 1024) {
@@ -181,15 +202,19 @@ export default function App() {
     sos:        SOSPage,
   }[page] || StartPage;
 
-  if (!isAuthenticated) {
+  if (!isLoaded) {
     return (
-      <LoginPage 
-        onLoginSuccess={() => {
-          setIsAuthenticated(true);
-          localStorage.setItem(AUTH_TOKEN_KEY, "authenticated");
-        }} 
-      />
+      <div className="grid min-h-screen place-items-center bg-slate-950 font-['Outfit'] text-white">
+        <div className="text-center">
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-pink-400" />
+          <p className="text-sm text-slate-300">Securing your PathRak session...</p>
+        </div>
+      </div>
     );
+  }
+
+  if (!isSignedIn) {
+    return <LoginPage />;
   }
 
   const hasCompletedProfile = userInfo && userInfo.name && userInfo.emergency_contact;
@@ -210,6 +235,9 @@ export default function App() {
                 setPage("heatmap");
               }} 
               onComplete={() => setPage("heatmap")}
+              clerkUserId={user.id}
+              profileStorageKey={profileStorageKey}
+              defaultName={user.fullName || user.firstName || ""}
               theme={theme}
             />
           </div>
@@ -229,7 +257,7 @@ export default function App() {
           {sidebarOpen ? "Close" : "Menu"}
         </button>
         <div className="text-sm font-semibold uppercase tracking-wide text-white">PathRak</div>
-        <div className="w-20" />
+        <UserButton afterSignOutUrl="/" />
       </header>
 
       {sidebarOpen && (
@@ -327,6 +355,7 @@ export default function App() {
               <span className="text-sm font-semibold text-slate-800 dark:text-white">{userInfo.name}</span>
             </div>
           )}
+          <UserButton afterSignOutUrl="/" />
         </div>
       </header>
 
@@ -340,9 +369,13 @@ export default function App() {
             userInfo={userInfo} 
             setUserInfo={setUserInfo}
             currentPos={currentPos}
+            locationError={locationError}
             onComplete={() => setPage("heatmap")}
             onEditProfile={() => setPage("start")}
             monitor={monitor}
+            clerkUserId={user.id}
+            profileStorageKey={profileStorageKey}
+            defaultName={user.fullName || user.firstName || ""}
           />
         </div>
         <div className="h-16 lg:hidden" />

@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 env_path = os.path.join(os.path.dirname(__file__), ".env")
 load_dotenv(dotenv_path=env_path)
 
+from data_config import DATA_DIR, data_metadata
+
 from model import (
     generate_heatmap,
     predict_zone_risk,
@@ -22,11 +24,9 @@ from lighting import (
 )
 from sos import trigger_sos, get_sos_log, find_nearest_station, find_all_stations, send_risk_warning_sms, send_battery_warning_sms
 from users import register_user, find_nearest_user
-from safewalk import SafeWalkStartRequest, start_safe_walk, cancel_safe_walk, extend_safe_walk, check_active_walks
+from safewalk import SafeWalkStartRequest, start_safe_walk, cancel_safe_walk, extend_safe_walk, expire_safe_walk, check_active_walks
 from safespots import get_safe_spots
 import asyncio
-
-from auth import generate_mock_otp, verify_otp
 
 app = FastAPI(
     title="PathRak API",
@@ -53,28 +53,6 @@ async def startup_event():
 
 
 # ── Request Models ─────────────────────────────────────────────────────────────
-
-class OTPRequest(BaseModel):
-    phone: str
-
-class OTPVerify(BaseModel):
-    phone: str
-    code: str
-
-@app.post("/api/auth/send-otp")
-def api_send_otp(req: OTPRequest):
-    code = generate_mock_otp(req.phone)
-    print(f"[AUTH] Mock OTP for {req.phone} is {code}")
-    return {"success": True, "message": "OTP sent"}
-
-@app.post("/api/auth/verify-otp")
-def api_verify_otp(req: OTPVerify):
-    is_valid = verify_otp(req.phone, req.code)
-    if is_valid:
-        return {"success": True, "token": f"mock-token-{req.phone}", "message": "Verified"}
-    else:
-        raise HTTPException(status_code=401, detail="Invalid or expired OTP")
-
 
 class ZoneRequest(BaseModel):
     lat: float = Field(..., ge=-90, le=90)
@@ -147,7 +125,7 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "timestamp": datetime.now().isoformat()}
+    return {"status": "ok", "timestamp": datetime.now().isoformat(), **data_metadata()}
 
 # ── Heatmap & Risk ─────────────────────────────────────────────────────────────
 
@@ -158,9 +136,11 @@ def heatmap(req: HeatmapRequest):
     dow  = req.day_of_week if req.day_of_week is not None else now.weekday()
     try:
         points = generate_heatmap(req.center_lat, req.center_lng, hour, dow)
+    except (FileNotFoundError, ValueError) as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Heatmap generation failed: {str(e)}")
-    return {"points": points, "total": len(points), "hour": hour}
+    return {"points": points, "total": len(points), "hour": hour, **data_metadata()}
 
 @app.post("/api/zone/risk")
 def zone_risk(req: ZoneRequest):
@@ -169,6 +149,8 @@ def zone_risk(req: ZoneRequest):
     dow  = req.day_of_week if req.day_of_week is not None else now.weekday()
     try:
         return predict_zone_risk(req.lat, req.lng, hour, dow, req.lighting or "dim")
+    except (FileNotFoundError, ValueError) as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Risk prediction failed: {str(e)}")
 
@@ -176,9 +158,11 @@ def zone_risk(req: ZoneRequest):
 def hotspots():
     try:
         clusters = get_hotspot_clusters()
+    except (FileNotFoundError, ValueError) as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Hotspot clustering failed: {str(e)}")
-    return {"clusters": clusters, "total": len(clusters)}
+    return {"clusters": clusters, "total": len(clusters), **data_metadata()}
 
 @app.get("/api/geocode")
 def geocode(q: str):
@@ -204,6 +188,8 @@ def route_score(req: RouteRequest):
     wps  = [{"lat": w.lat, "lng": w.lng} for w in req.waypoints]
     try:
         return score_route(wps, hour, dow)
+    except (FileNotFoundError, ValueError) as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Route scoring failed: {str(e)}")
 
@@ -213,38 +199,17 @@ def find_safe_route(req: RouteRequest):
 
     start = req.waypoints[0]
     end   = req.waypoints[-1]
+    now   = datetime.now()
+    hour  = req.hour if req.hour is not None else now.hour
+    dow   = req.day_of_week if req.day_of_week is not None else now.weekday()
 
     # FIX: Load API key from environment variable — never hardcode secrets
     ORS_KEY = os.getenv("ORS_API_KEY", "")
-    # If ORS API key is not set, gracefully fallback to a straight-line route
-    # and score it locally instead of returning an error. This keeps the
-    # frontend usable in development without external API keys.
     if not ORS_KEY:
-        # build a few simple waypoints (start -> midpoint -> end)
-        waypoints = [
-            {"lat": start.lat, "lng": start.lng},
-            {"lat": (start.lat + end.lat) / 2, "lng": (start.lng + end.lng) / 2},
-            {"lat": end.lat, "lng": end.lng},
-        ]
-        try:
-            scored = score_route(waypoints, hour, dow)
-            route = {
-                "route_index": 0,
-                "coordinates": [[w["lat"], w["lng"]] for w in waypoints],
-                "score": scored["score"] if isinstance(scored, dict) and "score" in scored else scored,
-                "label": scored.get("label") if isinstance(scored, dict) else "",
-                "avg_risk": scored.get("avg_risk") if isinstance(scored, dict) else None,
-                "distance_m": None,
-                "duration_s": None,
-                "is_safest": True,
-            }
-            return {"routes": [route], "total": 1}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Route scoring failed: {str(e)}")
-
-    now  = datetime.now()
-    hour = req.hour if req.hour is not None else now.hour
-    dow  = req.day_of_week if req.day_of_week is not None else now.weekday()
+        raise HTTPException(
+            status_code=503,
+            detail="ORS_API_KEY is not configured; real road-route alternatives are unavailable.",
+        )
 
     try:
         res = req_lib.post(
@@ -269,12 +234,18 @@ def find_safe_route(req: RouteRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
+    if not features:
+        raise HTTPException(status_code=502, detail="Route service returned no route candidates.")
+
     scored_routes = []
     for i, feature in enumerate(features):
         coords = feature["geometry"]["coordinates"]
         step = max(1, len(coords) // 50)
         waypoints = [{"lat": c[1], "lng": c[0]} for c in coords[::step]][:50]
-        score_result = score_route(waypoints, hour, dow)
+        try:
+            score_result = score_route(waypoints, hour, dow)
+        except (FileNotFoundError, ValueError) as e:
+            raise HTTPException(status_code=503, detail=str(e))
         summary = feature["properties"]["summary"]
         scored_routes.append({
             "route_index": i,
@@ -291,7 +262,7 @@ def find_safe_route(req: RouteRequest):
     if scored_routes:
         scored_routes[0]["is_safest"] = True
 
-    return {"routes": scored_routes, "total": len(scored_routes)}
+    return {"routes": scored_routes, "total": len(scored_routes), **data_metadata()}
 
 # ── Lighting ───────────────────────────────────────────────────────────────────
 
@@ -343,8 +314,6 @@ def nearest_helper(lat: float, lng: float, exclude_user_id: Optional[str] = None
 
 @app.post("/api/sos/trigger")
 def sos_trigger(req: SOSRequest):
-    import traceback
-    # FIX: Guard against empty POLICE_STATIONS list before triggering
     try:
         alert = trigger_sos(
             lat=req.lat,
@@ -356,11 +325,8 @@ def sos_trigger(req: SOSRequest):
             medical_details=req.medical_details or "",
         )
     except ValueError as e:
-        traceback.print_exc()
-        print("VALUE ERROR CAUGHT IN SOS TRIGGER:", e)
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
-        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
     helper = find_nearest_user(req.lat, req.lng, exclude_user_id=req.user_id)
@@ -418,6 +384,7 @@ def nearest_station(lat: float, lng: float):
     return {
         "nearest_station": stations[0] if stations else None,
         "stations": stations,
+        **data_metadata(),
     }
 
 # ── Crowd-Sourced Pins ─────────────────────────────────────────────────────────
@@ -464,7 +431,13 @@ def api_cancel_safe_walk(user_id: str):
 
 @app.post("/api/safewalk/extend")
 def api_extend_safe_walk(user_id: str, minutes: int = 15):
+    if minutes < 1 or minutes > 300:
+        raise HTTPException(status_code=422, detail="minutes must be between 1 and 300")
     return extend_safe_walk(user_id, minutes)
+
+@app.post("/api/safewalk/expire")
+def api_expire_safe_walk(user_id: str):
+    return expire_safe_walk(user_id)
 
 # ── Safe Spots Layer ───────────────────────────────────────────────────────────
 
@@ -483,7 +456,7 @@ def api_get_incident_history():
     
     if _RECENT_INCIDENTS_CACHE is None:
         import pandas as pd
-        data_path = os.path.join(os.path.dirname(__file__), "data", "incidents.csv")
+        data_path = str(DATA_DIR / "incidents.csv")
         if not os.path.exists(data_path):
             return {"incidents": []}
         df = pd.read_csv(data_path)
@@ -492,19 +465,14 @@ def api_get_incident_history():
     incidents = []
     now = datetime.now()
     for i, row in enumerate(_RECENT_INCIDENTS_CACHE):
-        time_diff = timedelta(minutes=i*15 + 2)
-        inc_time = now - time_diff
-        
         incidents.append({
             "id": row.get("id", i),
             "type": row.get("incident_type", "Unknown").title(),
             "lat": row.get("lat", 0),
             "lng": row.get("lng", 0),
             "area": row.get("area", "Unknown Area"),
-            "time": inc_time.isoformat(),
-            "relative_time": f"{int(time_diff.total_seconds() // 60)} mins ago" if time_diff.total_seconds() < 3600 else f"{int(time_diff.total_seconds() // 3600)} hours ago"
+            "time": None,
+            "relative_time": "Demo record - occurrence time unavailable",
         })
     
-    return {"incidents": incidents[::-1]}
-
-
+    return {"incidents": incidents[::-1], **data_metadata()}

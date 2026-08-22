@@ -1,9 +1,8 @@
 import { useState, useEffect } from "react";
 import { MapContainer, TileLayer, Polyline, CircleMarker, Popup, useMap } from "react-leaflet";
-import { scoreRoute, findSafeRoute, searchLocation } from "../api";
+import { findSafeRoute, searchLocation } from "../api";
+import { getBackendWeekday } from "../utils/safetyLogic";
 import "leaflet/dist/leaflet.css";
-
-const DEFAULT_CENTER = [12.9716, 77.5946];
 
 const SCORE_COLOR = (score) => {
   if (score >= 80) return { text: "text-green-400", bg: "bg-green-900/30", border: "border-green-500/40", line: "#22c55e" };
@@ -99,9 +98,9 @@ function LocationSearch({ label, value, onChange }) {
   );
 }
 
-export default function RoutePage({ theme }) {
-  const [start, setStart] = useState({ name: "Koramangala, Bengaluru", lat: 12.9352, lng: 77.6245 });
-  const [end, setEnd] = useState({ name: "MG Road, Bengaluru", lat: 12.9758, lng: 77.6065 });
+export default function RoutePage({ currentPos, theme }) {
+  const [start, setStart] = useState(null);
+  const [end, setEnd] = useState(null);
   const [hour, setHour] = useState(new Date().getHours());
   const [currentTime, setCurrentTime] = useState(new Date());
   const [routes, setRoutes] = useState([]);
@@ -111,8 +110,23 @@ export default function RoutePage({ theme }) {
   const [isVoiceOn, setIsVoiceOn] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [voiceStepIndex, setVoiceStepIndex] = useState(0);
+  const [startEdited, setStartEdited] = useState(false);
+  const [dataMode, setDataMode] = useState(null);
+
+  useEffect(() => {
+    if (!currentPos || startEdited) return;
+    setStart({
+      name: "Current location",
+      lat: currentPos[0],
+      lng: currentPos[1],
+    });
+  }, [currentPos, startEdited]);
 
   const handleFind = async () => {
+    if (!start || !end) {
+      setError("Set both a start and destination before finding a route.");
+      return;
+    }
     if (start.lat === end.lat && start.lng === end.lng) {
       setError("Start and end must be different locations.");
       return;
@@ -124,7 +138,7 @@ export default function RoutePage({ theme }) {
       const data = await findSafeRoute(
         [{ lat: start.lat, lng: start.lng }, { lat: end.lat, lng: end.lng }],
         hour,
-        new Date().getDay()
+        getBackendWeekday()
       );
       if (data.routes?.length === 0) throw new Error("No routes found");
 
@@ -145,31 +159,11 @@ export default function RoutePage({ theme }) {
       }
 
       setRoutes(unique);
+      setDataMode(data.data_mode || null);
       setSelectedRoute(0);
     } catch (err) {
       console.error("Error finding safe route:", err);
-      setError("OpenRouteService API key missing or invalid. Showing direct straight-line route instead.");
-      try {
-        const waypoints = [
-          { lat: start.lat, lng: start.lng },
-          { lat: (start.lat + end.lat) / 2, lng: (start.lng + end.lng) / 2 },
-          { lat: end.lat, lng: end.lng },
-        ];
-        const scored = await scoreRoute(waypoints, hour, new Date().getDay());
-        setRoutes([{
-          route_index: 0,
-          coordinates: waypoints.map(w => [w.lat, w.lng]),
-          score: scored.score,
-          label: scored.label,
-          avg_risk: scored.avg_risk,
-          is_safest: true,
-          distance_m: null,
-          duration_s: null,
-        }]);
-        setSelectedRoute(0);
-      } catch {
-        setError("Could not reach backend. Is it running?");
-      }
+      setError(err.message || "Could not find a real road route.");
     } finally {
       setLoading(false);
     }
@@ -290,7 +284,14 @@ export default function RoutePage({ theme }) {
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
         <div className="bg-white/60 dark:bg-slate-800/60 rounded-xl p-4 border border-black/10 dark:border-slate-700 relative z-50">
-          <LocationSearch label="📍 Start" value={start} onChange={setStart} />
+          <LocationSearch
+            label="📍 Start"
+            value={start}
+            onChange={(value) => {
+              setStartEdited(true);
+              setStart(value);
+            }}
+          />
         </div>
 
         <div className="bg-white/60 dark:bg-slate-800/60 rounded-xl p-4 border border-black/10 dark:border-slate-700 relative z-40">
@@ -346,6 +347,11 @@ export default function RoutePage({ theme }) {
       {error && (
         <div className="px-4 py-3 rounded-lg bg-yellow-900/40 border border-yellow-500/40 text-yellow-300 text-sm">{error}</div>
       )}
+      {dataMode === "DEMO" && (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-900/20 px-4 py-3 text-sm text-amber-200">
+          Route scores use synthetic demo incidents and are not real-world safety guidance.
+        </div>
+      )}
 
       {routes.length > 0 && (
         <div className={`grid grid-cols-1 gap-3 ${routes.length === 1 ? "md:grid-cols-1" : routes.length === 2 ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
@@ -385,7 +391,7 @@ export default function RoutePage({ theme }) {
               Route Safety: {safest.score}/100
             </p>
             <p className="text-slate-800 dark:text-white font-semibold mt-1">
-              Recommended: Route {routes.indexOf(safest) + 1} — {start.name.split(',')[0]} → {end.name.split(',')[0]}
+              Recommended: Route {routes.indexOf(safest) + 1} — {start?.name?.split(',')[0] || "Start"} → {end?.name?.split(',')[0] || "Destination"}
             </p>
             <p className={`text-sm ${SCORE_COLOR(safest.score).text}`}>
               {safest.label}
@@ -436,7 +442,7 @@ export default function RoutePage({ theme }) {
       )}
 
       <div className="flex-1 rounded-2xl overflow-hidden border border-black/10 dark:border-slate-700 h-[400px] relative z-0">
-        <MapContainer center={DEFAULT_CENTER} zoom={13} style={{ height: "400px", width: "100%" }}>
+        <MapContainer center={start ? [start.lat, start.lng] : end ? [end.lat, end.lng] : [20, 0]} zoom={13} style={{ height: "400px", width: "100%" }}>
           <TileLayer
             url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
             attribution='&copy; OpenStreetMap &copy; CartoDB'
@@ -482,15 +488,19 @@ export default function RoutePage({ theme }) {
             );
           })}
 
-          <CircleMarker center={[start.lat, start.lng]} radius={10}
-            pathOptions={{ color: "#22c55e", fillColor: "#22c55e", fillOpacity: 1 }}>
-            <Popup><strong>Start:</strong> {start.name}</Popup>
-          </CircleMarker>
+          {start && (
+            <CircleMarker center={[start.lat, start.lng]} radius={10}
+              pathOptions={{ color: "#22c55e", fillColor: "#22c55e", fillOpacity: 1 }}>
+              <Popup><strong>Start:</strong> {start.name}</Popup>
+            </CircleMarker>
+          )}
 
-          <CircleMarker center={[end.lat, end.lng]} radius={10}
-            pathOptions={{ color: "#ef4444", fillColor: "#ef4444", fillOpacity: 1 }}>
-            <Popup><strong>End:</strong> {end.name}</Popup>
-          </CircleMarker>
+          {end && (
+            <CircleMarker center={[end.lat, end.lng]} radius={10}
+              pathOptions={{ color: "#ef4444", fillColor: "#ef4444", fillOpacity: 1 }}>
+              <Popup><strong>End:</strong> {end.name}</Popup>
+            </CircleMarker>
+          )}
         </MapContainer>
       </div>
 

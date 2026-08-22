@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { MapContainer, TileLayer, Popup, Circle, useMap } from "react-leaflet";
 import { triggerSOS, getSOSLog, getNearestStation, getNearestHelper } from "../api";
 import "leaflet/dist/leaflet.css";
 
-const DEFAULT_POS = [12.9716, 77.5946];
+const MAP_PLACEHOLDER = [20, 0];
 
 // ── This component re-centers the map whenever `pos` changes ─────────────────
 function RecenterMap({ pos }) {
@@ -14,10 +14,8 @@ function RecenterMap({ pos }) {
   return null;
 }
 
-export default function SOSPage({ userInfo, onEditProfile, theme }) {
-  const [pos,           setPos]           = useState(DEFAULT_POS);
-  const [locationLabel, setLocationLabel] = useState("Detecting location…");
-  const [locError,      setLocError]      = useState("");
+export default function SOSPage({ userInfo, onEditProfile, currentPos, locationError }) {
+  const pos = currentPos;
   const [msg,           setMsg]           = useState("");
   const [result,        setResult]        = useState(null);
   const [log,           setLog]           = useState([]);
@@ -26,54 +24,9 @@ export default function SOSPage({ userInfo, onEditProfile, theme }) {
   const [sending,       setSending]       = useState(false);
   const [error,         setError]         = useState("");
   const [helpers,       setHelpers]       = useState([]);
-  const watchIdRef = useRef(null);
-
-  // ── Live location tracking (watchPosition instead of getCurrentPosition) ──
-  useEffect(() => {
-    if (!navigator.geolocation) {
-      setLocationLabel("GPS not supported by this browser");
-      setLocError("Your browser does not support geolocation.");
-      return;
-    }
-
-    // Ask for location and keep watching for updates
-    watchIdRef.current = navigator.geolocation.watchPosition(
-      (p) => {
-        const newPos = [p.coords.latitude, p.coords.longitude];
-        setPos(newPos);
-        setLocError("");
-        setLocationLabel(`Live GPS · ±${Math.round(p.coords.accuracy)}m accuracy`);
-      },
-      (err) => {
-        // Show a clear message depending on the error type
-        if (err.code === 1) {
-          setLocError("Location permission denied. Please allow location access in your browser settings, then reload the page.");
-          setLocationLabel("Permission denied — using default location");
-        } else if (err.code === 2) {
-          setLocError("Could not detect your location. Make sure your device GPS is on.");
-          setLocationLabel("GPS unavailable — using default location");
-        } else {
-          setLocError("Location request timed out. Showing default location.");
-          setLocationLabel("Timed out — using default location");
-        }
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
-      }
-    );
-
-    // Stop watching when component unmounts
-    return () => {
-      if (watchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
-      }
-    };
-  }, []);
-
   // ── Load nearest station whenever position changes ────────────────────────
   useEffect(() => {
+    if (!pos) return;
     getNearestStation(pos[0], pos[1])
       .then((data) => {
         setStation(data.nearest_station || null);
@@ -84,6 +37,7 @@ export default function SOSPage({ userInfo, onEditProfile, theme }) {
 
   // ── Load nearest helpers ──────────────────────────────────────────────────
   useEffect(() => {
+    if (!pos) return;
     getNearestHelper(pos[0], pos[1], userInfo?.user_id)
       .then((data) => setHelpers(data.nearest_helper ? [data.nearest_helper] : []))
       .catch(() => setHelpers([]));
@@ -101,6 +55,10 @@ export default function SOSPage({ userInfo, onEditProfile, theme }) {
   const handleSOS = async () => {
     if (!userInfo?.name?.trim()) {
       setError("Please complete your profile first.");
+      return;
+    }
+    if (!pos) {
+      setError("Live GPS is required. No fallback location will be sent.");
       return;
     }
     setSending(true);
@@ -135,8 +93,8 @@ export default function SOSPage({ userInfo, onEditProfile, theme }) {
         }
       }
 
-    } catch {
-      setError("Network error. Falling back to offline SMS...");
+    } catch (sosError) {
+      setError(`${sosError.message}. Opening the SMS composer; you must confirm sending.`);
       if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
       
       const mapsLink = `https://maps.google.com/?q=${pos[0]},${pos[1]}`;
@@ -152,17 +110,17 @@ export default function SOSPage({ userInfo, onEditProfile, theme }) {
     <div className="flex flex-col gap-4 h-full">
       <div>
         <h1 className="text-2xl font-bold text-slate-800 dark:text-white">SOS Emergency Alert</h1>
-        <p className="text-sm text-slate-600 dark:text-slate-400">One tap — your location reaches the nearest police station instantly</p>
+        <p className="text-sm text-slate-600 dark:text-slate-400">Records your live location and notifies your emergency contact when a provider is configured.</p>
       </div>
 
       {/* Location status banner */}
       <div className={`px-4 py-2 rounded-lg text-sm flex items-center gap-2 ${
-        locError
+        !pos
           ? "bg-yellow-900/40 border border-yellow-500/40 text-yellow-300"
           : "bg-emerald-900/30 border border-emerald-500/30 text-emerald-300"
       }`}>
-        <span>{locError ? "⚠️" : "📍"}</span>
-        <span>{locError || locationLabel}</span>
+        <span>{!pos ? "⚠️" : "📍"}</span>
+        <span>{locationError || (pos ? "Live GPS available" : "Waiting for live GPS. No default location is used.")}</span>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1">
@@ -170,7 +128,7 @@ export default function SOSPage({ userInfo, onEditProfile, theme }) {
         <div className="flex flex-col gap-4">
           {station && (
             <div className="bg-blue-900/30 border border-blue-500/40 rounded-xl p-4">
-              <p className="text-xs text-blue-400 font-semibold mb-1">NEAREST POLICE STATION</p>
+              <p className="text-xs text-blue-400 font-semibold mb-1">NEAREST DEMO STATION REFERENCE</p>
               <p className="text-slate-800 dark:text-white font-semibold">{station.name}</p>
               <p className="text-slate-600 dark:text-slate-400 text-sm">{station.distance_km} km away · {station.contact}</p>
             </div>
@@ -178,7 +136,7 @@ export default function SOSPage({ userInfo, onEditProfile, theme }) {
 
           {stations.length > 0 && (
             <div className="bg-blue-900/20 border border-blue-500/30 rounded-xl p-4">
-              <p className="text-xs text-blue-300 font-semibold mb-3">ALL NEARBY POLICE STATIONS</p>
+              <p className="text-xs text-blue-300 font-semibold mb-3">DEMO STATION REFERENCES</p>
               <div className="space-y-3 max-h-64 overflow-y-auto">
                 {stations.map((s, i) => (
                   <div key={s.id || i} className="rounded-xl bg-white/40 dark:bg-slate-900/60 p-3 border border-black/10 dark:border-slate-700">
@@ -248,34 +206,36 @@ export default function SOSPage({ userInfo, onEditProfile, theme }) {
 
             <div>
               <label className="text-xs text-slate-600 dark:text-slate-400 block mb-1">Your Location</label>
-              <p className="text-slate-800 dark:text-white font-mono text-sm">{pos[0].toFixed(5)}, {pos[1].toFixed(5)}</p>
-              <p className="text-xs text-slate-500 mt-1">{locationLabel}</p>
+              <p className="text-slate-800 dark:text-white font-mono text-sm">{pos ? `${pos[0].toFixed(5)}, ${pos[1].toFixed(5)}` : "Unavailable"}</p>
+              <p className="text-xs text-slate-500 mt-1">{pos ? "Shared live GPS" : "No location will be submitted."}</p>
             </div>
 
             {error && <p className="text-red-400 text-sm">{error}</p>}
 
             <button
               onClick={handleSOS}
-              disabled={sending || !userInfo}
+              disabled={sending || !userInfo || !pos || Boolean(result)}
               className={`w-full py-4 rounded-xl bg-red-600 hover:bg-red-500 active:scale-95 text-slate-800 dark:text-white text-lg font-bold disabled:opacity-50 transition transform flex items-center justify-center gap-2 ${sending ? 'animate-pulse-fast ring-pulse' : 'hover:ring-pulse'}`}
             >
-              {sending ? "Sending…" : "🆘  SEND SOS ALERT"}
+              {sending ? "Recording…" : result ? "SOS RECORDED" : "🆘  SEND SOS ALERT"}
             </button>
           </div>
 
           {result && (
             <div className="bg-green-900/30 border border-green-500/40 rounded-xl p-5">
-              <p className="text-green-400 font-bold text-lg mb-2">✅ Alert Dispatched!</p>
+              <p className="text-green-400 font-bold text-lg mb-2">SOS Recorded</p>
               <div className="text-sm text-slate-700 dark:text-slate-300 space-y-1">
                 <p><span className="text-slate-600 dark:text-slate-400">Alert ID:</span> {result.alert_id}</p>
-                <p><span className="text-slate-600 dark:text-slate-400">Station:</span> {result.nearest_station?.name}</p>
+                <p><span className="text-slate-600 dark:text-slate-400">Station reference:</span> {result.nearest_station?.name}</p>
                 <p><span className="text-slate-600 dark:text-slate-400">Distance:</span> {result.nearest_station?.distance_km} km</p>
                 <p><span className="text-slate-600 dark:text-slate-400">Emergency contact:</span> {result.emergency_contact || "N/A"}</p>
                 <p><span className="text-slate-600 dark:text-slate-400">Medical details:</span> {result.medical_details || "N/A"}</p>
                 {result.nearest_helper && (
                   <p><span className="text-slate-600 dark:text-slate-400">Nearest helper:</span> {result.nearest_helper.name} ({result.nearest_helper.distance_km} km)</p>
                 )}
-                <p><span className="text-slate-600 dark:text-slate-400">Est. Response:</span> ~{result.estimated_response_min} min</p>
+                <p><span className="text-slate-600 dark:text-slate-400">Police dispatch:</span> {result.police_dispatch}</p>
+                <p><span className="text-slate-600 dark:text-slate-400">Emergency contact notification:</span> {result.emergency_contact_notification}</p>
+                <p><span className="text-slate-600 dark:text-slate-400">Data mode:</span> {result.data_mode}</p>
                 <a
                   href={result.live_location_url}
                   target="_blank"
@@ -306,12 +266,12 @@ export default function SOSPage({ userInfo, onEditProfile, theme }) {
         {/* Right — Map */}
         <div className="rounded-2xl overflow-hidden border border-black/10 dark:border-slate-700 h-[400px]">
           <MapContainer
-            center={pos}
+            center={pos || MAP_PLACEHOLDER}
             zoom={15}
             style={{ height: "400px", width: "100%" }}
           >
             {/* Re-center map when pos updates */}
-            <RecenterMap pos={pos} />
+            {pos && <RecenterMap pos={pos} />}
 
             <TileLayer
               url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
@@ -319,13 +279,13 @@ export default function SOSPage({ userInfo, onEditProfile, theme }) {
             />
 
             {/* User location */}
-            <Circle
+            {pos && <Circle
               center={pos}
               radius={100}
               pathOptions={{ color: "#ef4444", fillColor: "#ef4444", fillOpacity: 0.3 }}
             >
               <Popup><strong>Your Location</strong><br />{pos[0].toFixed(5)}, {pos[1].toFixed(5)}</Popup>
-            </Circle>
+            </Circle>}
 
             {/* Police stations */}
             {stations.map((s, i) => {

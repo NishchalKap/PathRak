@@ -11,7 +11,7 @@ function RecenterMap({ center }) {
 import { getLightingMap, getLightingSavings } from "../api";
 import "leaflet/dist/leaflet.css";
 
-const DEFAULT_CENTER = [12.9716, 77.5946];
+const MAP_PLACEHOLDER = [20, 0];
 
 const STATUS_COLORS = {
   Working:        "#22c55e",
@@ -91,8 +91,8 @@ const buildLightingSegments = (zones) => {
   return segments;
 };
 
-export default function LightingPage({ theme }) {
-  const [center,   setCenter]   = useState(DEFAULT_CENTER);
+export default function LightingPage({ currentPos, locationError }) {
+  const center = currentPos;
   const [zones,    setZones]    = useState([]);
   const [savings,  setSavings]  = useState(null);
   const [hour,     setHour]     = useState(new Date().getHours());
@@ -101,17 +101,11 @@ export default function LightingPage({ theme }) {
   const [error,    setError]    = useState("");
   const lightingSegments = buildLightingSegments(zones);
 
-  // Try to get real location
-  useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        p => setCenter([p.coords.latitude, p.coords.longitude]),
-        () => {}
-      );
-    }
-  }, []);
-
   const fetchData = async () => {
+    if (!center) {
+      setError(locationError || "Live GPS is required to load lighting data.");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
@@ -119,8 +113,8 @@ export default function LightingPage({ theme }) {
       const sv = await getLightingSavings(lm.total || lm.zones?.length || 100);
       setZones(lm.zones || []);
       setSavings(sv);
-    } catch {
-      setError("Could not load lighting data. Is the backend running?");
+    } catch (fetchError) {
+      setError(fetchError.message || "Could not load lighting data.");
     } finally {
       setLoading(false);
     }
@@ -221,8 +215,8 @@ export default function LightingPage({ theme }) {
 
       {/* Map */}
       <div className="flex-1 rounded-2xl overflow-hidden border border-black/10 dark:border-slate-700 h-[400px]">
-        <MapContainer center={center} zoom={14} style={{ height: "400px", width: "100%" }}>
-          <RecenterMap center={center} />
+        <MapContainer center={center || MAP_PLACEHOLDER} zoom={14} style={{ height: "400px", width: "100%" }}>
+          {center && <RecenterMap center={center} />}
           <TileLayer
             url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
             attribution='&copy; OpenStreetMap &copy; CartoDB'

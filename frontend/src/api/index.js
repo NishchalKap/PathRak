@@ -12,7 +12,12 @@ const api = async (path, method = "GET", body = null) => {
   if (body) opts.body = JSON.stringify(body);
   try {
     const res = await fetch(`${BASE_URL}${path}`, opts);
-    if (!res.ok) throw new Error(`API error: ${res.status}`);
+    if (!res.ok) {
+      const payload = await res.json().catch(() => null);
+      const error = new Error(payload?.detail || `API error: ${res.status}`);
+      error.status = res.status;
+      throw error;
+    }
     return res.json();
   } finally {
     clearTimeout(timeout);
@@ -68,6 +73,8 @@ export const cancelSafeWalk = (user_id) =>
   api(`/api/safewalk/cancel?user_id=${user_id}`, "POST");
 export const extendSafeWalk = (user_id, minutes) =>
   api(`/api/safewalk/extend?user_id=${user_id}&minutes=${minutes}`, "POST");
+export const expireSafeWalk = (user_id) =>
+  api(`/api/safewalk/expire?user_id=${user_id}`, "POST");
 
 export const getSafeSpots = (lat, lng, radius = 2000) =>
   api(`/api/safe-spots?lat=${lat}&lng=${lng}&radius=${radius}`);
@@ -75,8 +82,3 @@ export const getSafeSpots = (lat, lng, radius = 2000) =>
 export const getIncidentHistory = () => api("/api/incidents/history");
 
 export const searchLocation = (query) => api(`/api/geocode?q=${encodeURIComponent(query)}`);
-
-export const requestOTP = (phone) => api("/api/auth/send-otp", "POST", { phone });
-export const verifyOTP = (phone, code) => api("/api/auth/verify-otp", "POST", { phone, code });
-
-

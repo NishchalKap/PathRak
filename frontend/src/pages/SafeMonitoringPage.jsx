@@ -14,7 +14,7 @@ export default function SafeMonitoringPage(props) {
       </div>
 
       {/* Shake Detection Module */}
-      <ShakeDetector userInfo={props.userInfo} currentPos={props.monitor ? props.monitor.currentPos : null} />
+      <ShakeDetector userInfo={props.userInfo} currentPos={props.currentPos} />
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 flex-1 overflow-hidden">
         {/* SafeWalk Column */}

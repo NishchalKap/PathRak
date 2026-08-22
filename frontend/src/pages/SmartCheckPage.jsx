@@ -1,10 +1,4 @@
-import { useState, useEffect, useRef } from "react";
-import { MapContainer, TileLayer, Circle, Popup } from "react-leaflet";
-import { triggerSOS } from "../api";
-import "leaflet/dist/leaflet.css";
-
-const DEFAULT_POS = [12.9716, 77.5946];
-const CHECK_SECONDS = 15 * 60;
+import { useState, useEffect } from "react";
 const HOME_RADIUS_METERS = 200;
 
 function haversineDistance(lat1, lng1, lat2, lng2) {
@@ -22,55 +16,45 @@ function formatTime(seconds) {
   return `${mins}:${secs}`;
 }
 
-export default function SmartCheckPage({ userInfo, onEditProfile, monitor, isSubComponent, theme }) {
+export default function SmartCheckPage({ userInfo, onEditProfile, currentPos, monitor, isSubComponent, theme }) {
   const { sc, globalConfirmSafe } = monitor || {};
-  const [currentPos, setCurrentPos] = useState(DEFAULT_POS);
   const [homePos, setHomePos] = useState(null);
   const [editingHome, setEditingHome] = useState(false);
+  const homeStorageKey = userInfo?.user_id ? `pathrak_home_location:${userInfo.user_id}` : null;
 
   if (!monitor) return null;
 
   useEffect(() => {
-    const stored = localStorage.getItem("pathrak_home_location") ?? localStorage.getItem("safeher_home_location");
+    setHomePos(null);
+    if (!homeStorageKey) return;
+
+    const stored = localStorage.getItem(homeStorageKey);
     if (stored) {
       try {
         setHomePos(JSON.parse(stored));
       } catch {
-        localStorage.removeItem("pathrak_home_location");
-        localStorage.removeItem("safeher_home_location");
+        localStorage.removeItem(homeStorageKey);
       }
     }
-  }, []);
-
-  useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (p) => setCurrentPos([p.coords.latitude, p.coords.longitude]),
-        () => {},
-      );
-    }
-  }, []);
-
-  useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (p) => setCurrentPos([p.coords.latitude, p.coords.longitude]),
-        () => {},
-      );
-    }
-  }, []);
+  }, [homeStorageKey]);
 
   const saveHomeLocation = () => {
-    localStorage.setItem("pathrak_home_location", JSON.stringify(currentPos));
-    localStorage.removeItem("safeher_home_location");
+    if (!currentPos) {
+      sc.setMessage("Current GPS location is unavailable. Please enable location access and try again.");
+      return;
+    }
+    if (!homeStorageKey) {
+      sc.setMessage("Complete your safety profile before saving a home location.");
+      return;
+    }
+    localStorage.setItem(homeStorageKey, JSON.stringify(currentPos));
     setHomePos(currentPos);
     setEditingHome(false);
     sc.setMessage("Home location saved. You can now start smart monitoring.");
   };
 
   const clearHomeLocation = () => {
-    localStorage.removeItem("pathrak_home_location");
-    localStorage.removeItem("safeher_home_location");
+    if (homeStorageKey) localStorage.removeItem(homeStorageKey);
     setHomePos(null);
     setEditingHome(false);
     sc.setMessage("Home location cleared.");
@@ -90,6 +74,10 @@ export default function SmartCheckPage({ userInfo, onEditProfile, monitor, isSub
       sc.setMessage("Please save your home location before starting Smart Check.");
       return;
     }
+    if (!currentPos) {
+      sc.setMessage("Current GPS location is required before starting Smart Check.");
+      return;
+    }
 
     const timerSeconds = sc.timerMinutes * 60;
     sc.setStatus("pending");
@@ -103,7 +91,7 @@ export default function SmartCheckPage({ userInfo, onEditProfile, monitor, isSub
     globalConfirmSafe(); // This cancels both SafeWalk and SmartCheck
   };
 
-  const homeDistance = homePos
+  const homeDistance = homePos && currentPos
     ? haversineDistance(currentPos[0], currentPos[1], homePos[0], homePos[1])
     : null;
 
@@ -146,11 +134,16 @@ export default function SmartCheckPage({ userInfo, onEditProfile, monitor, isSub
               </>
             ) : (
               <>
-                <p className="text-slate-800 dark:text-white font-mono text-sm">{currentPos[0].toFixed(5)}, {currentPos[1].toFixed(5)}</p>
-                <p className="text-xs text-slate-500">Your current GPS position will be saved as home</p>
+                <p className="text-slate-800 dark:text-white font-mono text-sm">
+                  {currentPos ? `${currentPos[0].toFixed(5)}, ${currentPos[1].toFixed(5)}` : "Location unavailable"}
+                </p>
+                <p className="text-xs text-slate-500">
+                  {currentPos ? "Your current GPS position will be saved as home" : "Enable location access to save home."}
+                </p>
                 <div className="flex gap-2 flex-wrap">
                   <button
                     onClick={saveHomeLocation}
+                    disabled={!currentPos}
                     className="flex-1 px-4 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-500 text-slate-800 dark:text-white text-sm transition"
                   >
                     {homePos ? "Update home location" : "Save as home location"}
@@ -178,12 +171,14 @@ export default function SmartCheckPage({ userInfo, onEditProfile, monitor, isSub
 
           <div className="rounded-2xl bg-white/40 dark:bg-slate-900/50 p-4 border border-black/10 dark:border-slate-700">
             <p className="text-sm text-slate-600 dark:text-slate-400">Current position</p>
-            <p className="text-slate-800 dark:text-white mt-2">{currentPos[0].toFixed(5)}, {currentPos[1].toFixed(5)}</p>
+            <p className="text-slate-800 dark:text-white mt-2">
+              {currentPos ? `${currentPos[0].toFixed(5)}, ${currentPos[1].toFixed(5)}` : "Location unavailable"}
+            </p>
             <p className="text-xs text-slate-500 mt-2">
-              {homePos ? `You are ${Math.round(homeDistance)} meters from home.` : "Set home location first."}
+              {!currentPos ? "Enable location access so Smart Check can monitor your return." : homePos ? `You are ${Math.round(homeDistance)} meters from home.` : "Set home location first."}
             </p>
             <p className={`text-sm mt-2 ${isAtHome ? "text-emerald-300" : "text-amber-300"}`}>
-              {homePos ? (isAtHome ? "Status: at home" : "Status: away from home") : "Home location is required."}
+              {!currentPos ? "Status: location unavailable" : homePos ? (isAtHome ? "Status: at home" : "Status: away from home") : "Home location is required."}
             </p>
           </div>
 
@@ -191,7 +186,8 @@ export default function SmartCheckPage({ userInfo, onEditProfile, monitor, isSub
             <div className="flex items-center justify-between gap-3">
               <button
                 onClick={startMonitoring}
-                className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-slate-800 dark:text-white font-semibold"
+                disabled={!currentPos || !homePos}
+                className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-slate-800 dark:text-white font-semibold disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Start Smart Check
               </button>
@@ -297,9 +293,10 @@ export default function SmartCheckPage({ userInfo, onEditProfile, monitor, isSub
           <p className="text-sm text-slate-600 dark:text-slate-400">Smart Check alert history</p>
           {sc.result ? (
             <div className="mt-4 rounded-2xl bg-green-900/30 border border-green-500/30 p-4 text-sm text-slate-800 dark:text-slate-200 space-y-2">
-              <p className="font-semibold">Alert triggered</p>
+              <p className="font-semibold">Alert recorded</p>
               <p>Alert ID: {sc.result.alert_id}</p>
-              <p>Station: {sc.result.nearest_station?.name}</p>
+              <p>Station reference: {sc.result.nearest_station?.name}</p>
+              <p>Police dispatch: {sc.result.police_dispatch || "Unavailable"}</p>
               <p>Contact: {sc.result.emergency_contact || "N/A"}</p>
               <p>Medical: {sc.result.medical_details || "N/A"}</p>
             </div>
