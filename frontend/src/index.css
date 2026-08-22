@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    margin: 0;
+    font-family: 'Outfit', 'Inter', -apple-system, sans-serif;
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.1);
+}
+.dark ::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.5);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(236, 72, 153, 0.3);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(236, 72, 153, 0.5);
+}
+
+/* Leaflet dark map fix */
+.dark .leaflet-container {
+  background: #0f172a;
+}
+.leaflet-container {
+  background: #f8fafc;
+}
+
+@layer utilities {
+  .glass-panel {
+    @apply bg-white/40 dark:bg-white/5 backdrop-blur-xl border border-white/60 dark:border-white/10 shadow-2xl;
+  }
+  .glass-button {
+    @apply bg-gradient-to-r from-pink-500 to-violet-500 hover:from-pink-400 hover:to-violet-400 dark:from-pink-600 dark:to-violet-600 dark:hover:from-pink-500 dark:hover:to-violet-500 shadow-lg shadow-pink-500/25 transition-all duration-300;
+  }
+}
