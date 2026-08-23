@@ -10,6 +10,8 @@ export function useSafetyMonitor(userInfo, currentPos) {
   const [swTimeLeft, setSwTimeLeft] = useState(0);
   const [swAlertResult, setSwAlertResult] = useState(null);
   const [swMessage, setSwMessage] = useState("");
+  const [swRouteLabel, setSwRouteLabel] = useState("");
+  const [swEmergencyEvent, setSwEmergencyEvent] = useState(null);
 
   // SmartCheck State
   const [scStatus, setScStatus] = useState("idle");
@@ -44,21 +46,51 @@ export function useSafetyMonitor(userInfo, currentPos) {
         })) {
           handledSosRef.current.sw = true;
           setSwMessage("SafeWalk ETA expired. Recording emergency alert.");
+          setSwEmergencyEvent({
+            trigger: "Missed SafeWalk check-in",
+            timestamp: now.toISOString(),
+            location: currentPos ? { lat: currentPos[0], lng: currentPos[1] } : null,
+            destination: swDestination,
+            route: swRouteLabel,
+            journeyStatus: "EXPIRED",
+            status: "RECORDING",
+            sosResponse: null,
+            notificationState: "PENDING",
+          });
           if (userInfo?.user_id) {
-            expireSafeWalk(userInfo.user_id)
+            expireSafeWalk(userInfo.user_id, currentPos?.[0], currentPos?.[1])
               .then((res) => {
                 if (res.status === "alerted" || res.status === "already_alerted") {
                   setSwAlertResult(res.alert);
                   setSwMessage("SafeWalk emergency alert recorded. Check dispatch status below.");
+                  setSwEmergencyEvent((event) => ({
+                    ...event,
+                    timestamp: res.alert?.timestamp || event?.timestamp,
+                    status: res.status.toUpperCase(),
+                    sosResponse: res.alert || null,
+                    notificationState: res.alert?.emergency_contact_notification || "NOT_AVAILABLE",
+                  }));
                 } else {
                   setSwMessage(res.detail || `SafeWalk alert status: ${res.status}.`);
+                  setSwEmergencyEvent((event) => ({
+                    ...event,
+                    status: String(res.status || "UNKNOWN").toUpperCase(),
+                    notificationState: "NOT_AVAILABLE",
+                  }));
                 }
               })
               .catch((error) => {
                 setSwMessage(`SafeWalk ETA expired, but the alert could not be recorded: ${error.message}`);
+                setSwEmergencyEvent((event) => ({
+                  ...event,
+                  status: "REQUEST_FAILED",
+                  notificationState: "NOT_AVAILABLE",
+                  error: error.message,
+                }));
               });
           } else {
-            setSwMessage("SafeWalk ETA expired, but current location was unavailable.");
+            setSwMessage("SafeWalk ETA expired, but the signed-in user was unavailable for the alert request.");
+            setSwEmergencyEvent((event) => ({ ...event, status: "USER_UNAVAILABLE", notificationState: "NOT_AVAILABLE" }));
           }
         }
       }
@@ -86,7 +118,7 @@ export function useSafetyMonitor(userInfo, currentPos) {
     }, 1000);
 
     return () => clearInterval(intervalRef.current);
-  }, [swActive, swEtaTime, scStatus, userInfo, currentPos, scTimerMinutes]);
+  }, [swActive, swEtaTime, swDestination, swRouteLabel, scStatus, userInfo, currentPos, scTimerMinutes]);
 
   // ── High-Risk Zone Polling ──
   const lastNotifiedRef = useRef(0);
@@ -178,6 +210,8 @@ export function useSafetyMonitor(userInfo, currentPos) {
     setSwDestination("");
     setSwAlertResult(null);
     setSwMessage("");
+    setSwRouteLabel("");
+    setSwEmergencyEvent(null);
 
     setScStatus("safe");
     setScMessage("You are marked safe. No alert was sent.");
@@ -194,6 +228,8 @@ export function useSafetyMonitor(userInfo, currentPos) {
     setSwDestination("");
     setSwAlertResult(null);
     setSwMessage("");
+    setSwRouteLabel("");
+    setSwEmergencyEvent(null);
     handledSosRef.current.sw = false;
   };
 
@@ -214,6 +250,14 @@ export function useSafetyMonitor(userInfo, currentPos) {
       setAlertResult: setSwAlertResult,
       message: swMessage,
       setMessage: setSwMessage,
+      routeLabel: swRouteLabel,
+      setRouteLabel: setSwRouteLabel,
+      emergencyEvent: swEmergencyEvent,
+      setEmergencyEvent: setSwEmergencyEvent,
+      claimEmergency: (event) => {
+        handledSosRef.current.sw = true;
+        setSwEmergencyEvent(event);
+      },
       reset: resetSafeWalk,
     },
     sc: {

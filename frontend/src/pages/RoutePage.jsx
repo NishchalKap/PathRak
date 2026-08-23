@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { MapContainer, TileLayer, Polyline, CircleMarker, Popup, useMap } from "react-leaflet";
 import { findSafeRoute, searchLocation } from "../api";
 import { getBackendWeekday } from "../utils/safetyLogic";
+import { createRoutePlan, getDistinctRoutes, getRouteRiskLabel } from "../utils/routePlan";
 import Icon from "../components/Icon";
 import { Notice, PageHeader, StatusPill } from "../components/UI";
 import "leaflet/dist/leaflet.css";
@@ -141,21 +142,8 @@ export default function RoutePage({ currentPos, theme, onStartSafeWalk, appConfi
       );
       if (data.routes?.length === 0) throw new Error("No routes found");
 
-      // Filter out practically identical routes using a midpoint heuristic
-      const areRoutesSimilar = (r1, r2) => {
-        if (!r1.coordinates.length || !r2.coordinates.length) return false;
-        const mid1 = r1.coordinates[Math.floor(r1.coordinates.length / 2)];
-        const mid2 = r2.coordinates[Math.floor(r2.coordinates.length / 2)];
-        const dist = Math.sqrt(Math.pow(mid1[0] - mid2[0], 2) + Math.pow(mid1[1] - mid2[1], 2));
-        return dist < 0.005; // Requires ~500m separation at the midpoint
-      };
-
-      const unique = [];
-      for (const r of data.routes || []) {
-        if (!unique.some(existing => areRoutesSimilar(existing, r))) {
-          unique.push(r);
-        }
-      }
+      const unique = getDistinctRoutes(data.routes, 3);
+      if (!unique.length) throw new Error("No routes with usable road geometry were returned");
 
       setRoutes(unique);
       setDataMode(data.data_mode || null);
@@ -176,6 +164,33 @@ export default function RoutePage({ currentPos, theme, onStartSafeWalk, appConfi
 
   const safest = routes.find(r => r.is_safest) || routes[0];
   const chosenRoute = routes[selectedRoute] || safest;
+  const chosenRisk = getRouteRiskLabel(chosenRoute?.avg_risk);
+  const chosenDistance = Number.isFinite(chosenRoute?.distance_m) ? `${(chosenRoute.distance_m / 1000).toFixed(1)} km` : "Unavailable";
+  const chosenDuration = Number.isFinite(chosenRoute?.duration_s) ? `${Math.max(1, Math.round(chosenRoute.duration_s / 60))} min` : "Unavailable";
+  const recommendedRoute = routes.find(route => route.is_safest) || routes[0];
+  const shortestDistance = routes.length ? Math.min(...routes.map(route => route.distance_m)) : null;
+  const fastestDuration = routes.length ? Math.min(...routes.map(route => route.duration_s)) : null;
+
+  const getRouteReasons = (route) => {
+    const reasons = [];
+    if (route.is_safest) reasons.push("Highest PathRak safety score");
+    if (route.distance_m === shortestDistance) reasons.push("Shortest available route");
+    if (route.duration_s === fastestDuration) reasons.push("Fastest available route");
+    if (!route.is_safest && Number.isFinite(recommendedRoute?.avg_risk) && Number.isFinite(route.avg_risk)) {
+      if (route.avg_risk < recommendedRoute.avg_risk) reasons.push("Lower average risk than the recommended route");
+      if (route.avg_risk > recommendedRoute.avg_risk) reasons.push("Higher average risk than the recommended route");
+    }
+    if (!route.is_safest && Number.isFinite(recommendedRoute?.distance_m) && Number.isFinite(route.distance_m)) {
+      if (route.distance_m + 25 < recommendedRoute.distance_m) reasons.push("Shorter than the recommended route");
+      if (route.distance_m > recommendedRoute.distance_m + 25) reasons.push("Longer than the recommended route");
+    }
+    return reasons;
+  };
+
+  const startSelectedRoute = () => {
+    if (!chosenRoute || !end) return;
+    onStartSafeWalk?.(createRoutePlan({ route: chosenRoute, destination: end, provider: routingProvider }));
+  };
 
   const speak = (text, onend) => {
     if (!window.speechSynthesis) return;
@@ -226,9 +241,31 @@ export default function RoutePage({ currentPos, theme, onStartSafeWalk, appConfi
 
         <aside className="route-results">
           {!routes.length ? <div className="panel route-empty"><span><Icon name="route" size={26} /></span><h2>No route calculated yet</h2><p>Choose a destination to compare available road routes, travel time, distance, and risk score.</p></div> : <>
-            <div className="route-result-heading"><p className="eyebrow">Route alternatives</p><h2>Choose your route</h2></div>
-            <div className="route-options">{routes.map((route, index) => { const selected = selectedRoute === index; const style = scoreStyle(route.score); return <button key={index} className={`route-option tone-${style.tone} ${selected ? "is-selected" : ""}`} onClick={() => setSelectedRoute(index)}><span className="route-index">{index + 1}</span><span className="route-copy"><strong>{route.is_safest ? "Recommended route" : `Alternative ${index + 1}`}</strong><small>{route.label} · Average risk {route.avg_risk}/5</small>{route.distance_m && <small>{(route.distance_m / 1000).toFixed(1)} km · {Math.round(route.duration_s / 60)} min</small>}</span><span className="route-score"><strong>{route.score}</strong><small>/100</small></span></button>; })}</div>
-            {safest && <section className="voice-panel"><div><p className="eyebrow">Recommended</p><h3>{start?.name?.split(",")[0]} to {end?.name?.split(",")[0]}</h3><p>{safest.label} · Safety score {safest.score}/100</p></div><div className="voice-actions"><button className="btn btn-primary" onClick={() => onStartSafeWalk?.({ destination: end.name, distanceM: chosenRoute.distance_m, coordinates: chosenRoute.coordinates, provider: routingProvider })}>Use selected route in SafeWalk</button><button className="btn btn-quiet" onClick={() => speak(`Route summary: ${safest.label}. Safety score ${safest.score} out of 100. Distance ${(safest.distance_m / 1000).toFixed(1)} kilometers.`)}>Speak route summary</button></div></section>}
+            <div className="route-result-heading"><p className="eyebrow">PathRak safe routes</p><h2>Compare and select</h2><p>{routes.length === 1 ? "The routing provider returned one distinct road route for this journey." : `${routes.length} distinct road routes were returned and scored independently.`}</p></div>
+            <div className="route-options">{routes.map((route, index) => {
+              const selected = selectedRoute === index;
+              const style = scoreStyle(route.score);
+              const alternativeNumber = routes.slice(0, index + 1).filter(item => !item.is_safest).length;
+              const title = route.is_safest ? "Recommended route" : `Alternative route ${alternativeNumber}`;
+              const reasons = getRouteReasons(route);
+              return <article key={route.route_index ?? index} className={`route-option tone-${style.tone} ${selected ? "is-selected" : ""}`} onClick={() => setSelectedRoute(index)}>
+                <span className="route-option-top"><span><small>{route.is_safest ? "Recommended" : "Available route"}</small><strong>{title}</strong></span>{selected && <span className="selected-badge"><Icon name="check" size={13} />Selected</span>}</span>
+                <dl className="route-option-metrics"><div><dt>Route label</dt><dd>{route.label}</dd></div><div><dt>Safety score</dt><dd>{route.score} / 100</dd></div><div><dt>Risk</dt><dd>{getRouteRiskLabel(route.avg_risk)}</dd></div><div><dt>Average risk</dt><dd>{route.avg_risk} / 5</dd></div><div><dt>Distance</dt><dd>{(route.distance_m / 1000).toFixed(1)} km</dd></div><div><dt>ETA</dt><dd>{Math.max(1, Math.round(route.duration_s / 60))} min</dd></div><div className="route-provider"><dt>Provider</dt><dd>{routingProvider === "OSRM_DEMO" ? "OSRM" : "OpenRouteService"}</dd></div></dl>
+                {reasons.length > 0 && <span className="route-tradeoffs">{reasons.map(reason => <small key={reason}><Icon name={reason.includes("Higher") || reason.includes("Longer") ? "warning" : "check"} size={13} />{reason}</small>)}</span>}
+                <button type="button" aria-pressed={selected} className={`route-select-action ${selected ? "is-selected" : ""}`} onClick={() => setSelectedRoute(index)}>{selected ? "Selected route" : "Select route"}</button>
+              </article>;
+            })}</div>
+            {chosenRoute && <section className="route-analysis" aria-label="PathRak safety analysis">
+              <div className="route-analysis-heading"><div><p className="eyebrow">PathRak safety analysis</p><h3>{start?.name?.split(",")[0]} to {end?.name?.split(",")[0]}</h3></div>{chosenRoute.is_safest && <StatusPill tone="success">Recommended</StatusPill>}</div>
+              <dl className="route-analysis-metrics">
+                <div><dt>Safety score</dt><dd>{chosenRoute.score}<small>/ 100</small></dd></div>
+                <div><dt>Distance</dt><dd>{chosenDistance}</dd></div>
+                <div><dt>Estimated time</dt><dd>{chosenDuration}</dd></div>
+                <div><dt>Risk</dt><dd>{chosenRisk}</dd></div>
+              </dl>
+              <div className="route-reasons"><strong>Why this route</strong><ul>{chosenRoute.is_safest && <li>Best safety score among the available routes</li>}<li>Average spatial risk {chosenRoute.avg_risk}/5</li>{routingProvider && <li>Road-network route returned by {routingProvider === "OSRM_DEMO" ? "OSRM" : "OpenRouteService"}</li>}</ul></div>
+              <div className="route-analysis-actions"><button className="btn btn-primary" onClick={startSelectedRoute}><Icon name="walk" />Start SafeWalk</button><button className="btn btn-quiet" onClick={() => speak(`Route summary: ${chosenRoute.label}. Safety score ${chosenRoute.score} out of 100. Distance ${(chosenRoute.distance_m / 1000).toFixed(1)} kilometers. Estimated time ${Math.max(1, Math.round(chosenRoute.duration_s / 60))} minutes.`)}>Speak route summary</button></div>
+            </section>}
           </>}
         </aside>
       </div>

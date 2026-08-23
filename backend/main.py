@@ -521,8 +521,14 @@ def api_extend_safe_walk(minutes: int = 15, claims: dict = Depends(require_clerk
     return extend_safe_walk(claims["sub"], minutes)
 
 @app.post("/api/safewalk/expire")
-def api_expire_safe_walk(claims: dict = Depends(require_clerk_user)):
-    return expire_safe_walk(claims["sub"])
+def api_expire_safe_walk(lat: float = None, lng: float = None, claims: dict = Depends(require_clerk_user)):
+    if (lat is None) != (lng is None):
+        raise HTTPException(status_code=422, detail="lat and lng must be provided together")
+    if lat is not None and not -90 <= lat <= 90:
+        raise HTTPException(status_code=422, detail="lat must be between -90 and 90")
+    if lng is not None and not -180 <= lng <= 180:
+        raise HTTPException(status_code=422, detail="lng must be between -180 and 180")
+    return expire_safe_walk(claims["sub"], lat=lat, lng=lng)
 
 # ── Safe Spots Layer ───────────────────────────────────────────────────────────
 

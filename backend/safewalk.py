@@ -53,7 +53,7 @@ def extend_safe_walk(user_id: str, minutes: int = 15):
     return {"status": "not_found"}
 
 
-def expire_safe_walk(user_id: str, now: datetime = None) -> dict:
+def expire_safe_walk(user_id: str, now: datetime = None, lat: float = None, lng: float = None) -> dict:
     """Atomically claim and process an expired walk at most once."""
     from sos import trigger_sos
 
@@ -66,6 +66,9 @@ def expire_safe_walk(user_id: str, now: datetime = None) -> dict:
             return {"status": "already_alerted", "alert": walk["alert"]}
         if check_time < walk["eta"]:
             return {"status": "not_due", "eta": walk["eta"].isoformat()}
+        if lat is not None and lng is not None:
+            walk["lat"] = lat
+            walk["lng"] = lng
         walk["alert_triggered"] = True
 
     try:

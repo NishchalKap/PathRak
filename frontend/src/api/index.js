@@ -87,8 +87,10 @@ export const cancelSafeWalk = (user_id) =>
   api("/api/safewalk/cancel", "POST");
 export const extendSafeWalk = (user_id, minutes) =>
   api(`/api/safewalk/extend?minutes=${minutes}`, "POST");
-export const expireSafeWalk = (user_id) =>
-  api("/api/safewalk/expire", "POST");
+export const expireSafeWalk = (user_id, lat = null, lng = null) => {
+  const locationQuery = Number.isFinite(lat) && Number.isFinite(lng) ? `?lat=${lat}&lng=${lng}` : "";
+  return api(`/api/safewalk/expire${locationQuery}`, "POST");
+};
 
 export const getSafeSpots = (lat, lng, radius = 2000) =>
   api(`/api/safe-spots?lat=${lat}&lng=${lng}&radius=${radius}`);

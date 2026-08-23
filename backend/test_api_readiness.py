@@ -86,11 +86,36 @@ class ApiReadinessTests(unittest.TestCase):
         self.assertTrue(response.json()["demo_expiry"])
         with ACTIVE_WALKS_LOCK:
             ACTIVE_WALKS["clerk-user-a"]["eta"] = datetime.now(timezone.utc) - timedelta(seconds=1)
-        first = self.client.post("/api/safewalk/expire").json()
+        first = self.client.post("/api/safewalk/expire?lat=12.9800&lng=77.6100").json()
         second = self.client.post("/api/safewalk/expire").json()
         self.assertEqual(first["status"], "alerted")
         self.assertEqual(second["status"], "already_alerted")
         self.assertEqual(first["alert"]["alert_id"], second["alert"]["alert_id"])
+        self.assertEqual(first["alert"]["location"], {"lat": 12.98, "lng": 77.61})
+
+    def test_manual_sos_after_cancelling_safewalk_does_not_auto_expire(self):
+        started = self.client.post("/api/safewalk/start", json={
+            "user_id": "spoofed-user",
+            "user_name": "A",
+            "destination": "Manual emergency destination",
+            "eta_minutes": 20,
+            "lat": 12.9755,
+            "lng": 77.6069,
+            "emergency_contact": "",
+        })
+        self.assertEqual(started.json()["status"], "started")
+        self.assertEqual(self.client.post("/api/safewalk/cancel").json()["status"], "cancelled")
+        manual = self.client.post("/api/sos/trigger", json={
+            "lat": 12.9800,
+            "lng": 77.6100,
+            "user_id": "spoofed-user",
+            "user_name": "A",
+            "message": "Manual SOS during SafeWalk",
+            "emergency_contact": "",
+        }).json()
+        self.assertEqual(manual["status"], "RECORDED")
+        self.assertEqual(self.client.post("/api/safewalk/expire").json()["status"], "not_found")
+        self.assertEqual(len(SOS_LOG), 1)
 
     @patch("requests.get")
     def test_demo_route_parses_real_provider_shape_and_scores_geometry(self, get_mock):
