@@ -1,8 +1,9 @@
 import asyncio
 import threading
 from datetime import datetime, timedelta, timezone
-from typing import Dict
+from typing import Dict, Optional
 from pydantic import BaseModel, Field
+from demo_config import DEMO_MODE
 
 # In-memory store for active walks
 # Key: user_id (str), Value: dict with walk details
@@ -17,9 +18,13 @@ class SafeWalkStartRequest(BaseModel):
     lat: float = Field(..., ge=-90, le=90)
     lng: float = Field(..., ge=-180, le=180)
     emergency_contact: str = ""
+    demo_expiry_seconds: Optional[int] = Field(default=None, ge=5, le=120)
 
 def start_safe_walk(req: SafeWalkStartRequest):
-    eta_time = datetime.now(timezone.utc) + timedelta(minutes=req.eta_minutes)
+    demo_expiry = req.demo_expiry_seconds if DEMO_MODE else None
+    eta_time = datetime.now(timezone.utc) + (
+        timedelta(seconds=demo_expiry) if demo_expiry else timedelta(minutes=req.eta_minutes)
+    )
     with ACTIVE_WALKS_LOCK:
         ACTIVE_WALKS[req.user_id] = {
             "user_name": req.user_name,
@@ -31,7 +36,7 @@ def start_safe_walk(req: SafeWalkStartRequest):
             "alert_triggered": False,
             "alert": None,
         }
-    return {"status": "started", "eta": eta_time.isoformat()}
+    return {"status": "started", "eta": eta_time.isoformat(), "demo_expiry": bool(demo_expiry)}
 
 def cancel_safe_walk(user_id: str):
     with ACTIVE_WALKS_LOCK:

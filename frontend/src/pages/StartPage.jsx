@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { registerUser } from "../api";
+import { deleteUserProfile, registerUser } from "../api";
 import Icon from "../components/Icon";
 import { Notice, PageHeader, StatusPill } from "../components/UI";
 
@@ -21,6 +21,7 @@ export default function StartPage({ userInfo, setUserInfo, onComplete, currentPo
     event.preventDefault();
     if (!name.trim()) return setError("Enter your full name.");
     if (!contact.trim()) return setError("Enter the contact PathRak should include with emergency alerts.");
+    if (!/^\+[1-9]\d{7,14}$/.test(contact.trim())) return setError("Use E.164 format, for example +919876543210.");
     if (!clerkUserId || !profileStorageKey) return setError("Your account is still loading. Try again in a moment.");
 
     const profile = { user_id: clerkUserId, name: name.trim(), emergency_contact: contact.trim(), medical_details: medical.trim() };
@@ -41,6 +42,23 @@ export default function StartPage({ userInfo, setUserInfo, onComplete, currentPo
     onComplete?.();
   };
 
+  const deleteProfile = async () => {
+    if (!window.confirm("Delete this emergency profile from this device and deactivate its backend helper record?")) return;
+    setSaving(true);
+    setError("");
+    try {
+      await deleteUserProfile();
+      localStorage.removeItem(profileStorageKey);
+      setUserInfo(null);
+      setContact("");
+      setMedical("");
+    } catch (deleteError) {
+      setError(deleteError.message || "The profile could not be deleted.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="page-stack profile-page">
       {!isOnboarding && <PageHeader eyebrow="Account safety" title="Emergency profile" description="Keep the information used by SOS, SafeWalk, Smart Check, and nearby-helper features accurate." actions={<StatusPill tone={userInfo ? "success" : "warning"} icon={userInfo ? "check" : "warning"}>{userInfo ? "Profile ready" : "Setup required"}</StatusPill>} />}
@@ -53,6 +71,7 @@ export default function StartPage({ userInfo, setUserInfo, onComplete, currentPo
           {error && <Notice tone="danger" title="Check your profile" role="alert">{error}</Notice>}
           {message && <Notice tone="warning" title="Saved locally">{message}</Notice>}
           <button className="btn btn-primary profile-save" type="submit" disabled={saving}>{saving ? "Saving profile..." : userInfo ? "Save profile changes" : "Complete setup"}</button>
+          {userInfo && <button className="btn btn-secondary" type="button" disabled={saving} onClick={deleteProfile}>Delete emergency profile</button>}
         </form>
 
         <aside className="profile-context">

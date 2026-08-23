@@ -17,16 +17,17 @@ def get_traffic_density(lat: float, lng: float, hour: int = None) -> dict:
     if hour is None:
         hour = datetime.now().hour
 
+    rng = random.Random(f"{lat:.5f}:{lng:.5f}:{hour}")
     if 7 <= hour <= 9 or 17 <= hour <= 20:
-        base_density = random.uniform(0.7, 1.0)
+        base_density = rng.uniform(0.7, 1.0)
     elif 10 <= hour <= 16:
-        base_density = random.uniform(0.4, 0.7)
+        base_density = rng.uniform(0.4, 0.7)
     elif 21 <= hour <= 23:
-        base_density = random.uniform(0.2, 0.5)
+        base_density = rng.uniform(0.2, 0.5)
     else:
-        base_density = random.uniform(0.05, 0.2)
+        base_density = rng.uniform(0.05, 0.2)
 
-    noise   = random.uniform(-0.05, 0.05)
+    noise   = rng.uniform(-0.05, 0.05)
     density = max(0.0, min(1.0, base_density + noise))
 
     return {
@@ -237,10 +238,11 @@ def calculate_city_savings(num_zones: int = 100, hour: int = None) -> dict:
     total_traditional = num_zones * 100
     total_smart       = 0
 
+    rng = random.Random(f"pathrak-demo-lighting:{num_zones}:{hour}")
     for _ in range(num_zones):
-        density = random.uniform(0, 1)
-        lat     = random.uniform(12.73, 13.15)
-        lng     = random.uniform(77.45, 77.80)
+        density = rng.uniform(0, 1)
+        lat     = rng.uniform(12.73, 13.15)
+        lng     = rng.uniform(77.45, 77.80)
         status  = simulate_street_light_status(lat, lng)
 
         if not status["has_street_light"]:
@@ -269,4 +271,6 @@ def calculate_city_savings(num_zones: int = 100, hour: int = None) -> dict:
         "status_breakdown": zone_breakdown,
         "energy_saved_pct": savings_pct,
         "hour": hour,
+        "data_mode": "SIMULATED",
+        "method": "Deterministic scenario estimate; not measured utility telemetry.",
     }

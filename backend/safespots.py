@@ -5,7 +5,10 @@ def get_safe_spots(lat: float, lng: float, radius: int = 2000):
     Fetches police stations, hospitals, and 24/7 convenience stores
     using the OpenStreetMap Overpass API.
     """
-    overpass_url = "http://overpass-api.de/api/interpreter"
+    overpass_urls = [
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter",
+    ]
     
     # Query for police, hospital, and 24/7 shops
     overpass_query = f"""
@@ -20,9 +23,18 @@ def get_safe_spots(lat: float, lng: float, radius: int = 2000):
     headers = {
         "User-Agent": "PathRak/1.0 (https://github.com/NishchalKap/PathRak)"
     }
+    last_error = None
+    for overpass_url in overpass_urls:
+        try:
+            response = requests.post(overpass_url, data={"data": overpass_query}, headers=headers, timeout=18)
+            response.raise_for_status()
+            break
+        except requests.exceptions.RequestException as exc:
+            last_error = exc
+    else:
+        raise RuntimeError(f"OpenStreetMap safe-spot lookup is unavailable: {last_error}")
+
     try:
-        response = requests.post(overpass_url, data={"data": overpass_query}, headers=headers, timeout=10)
-        response.raise_for_status()
         data = response.json()
         
         spots = []
@@ -44,7 +56,6 @@ def get_safe_spots(lat: float, lng: float, radius: int = 2000):
                 "name": tags.get("name", f"Unnamed {spot_type}"),
                 "type": spot_type
             })
-        return {"status": "success", "spots": spots}
-        
-    except requests.exceptions.RequestException as e:
-        return {"status": "error", "message": str(e), "spots": []}
+        return {"status": "success", "spots": spots, "source": "OpenStreetMap Overpass", "live": True}
+    except (ValueError, KeyError) as exc:
+        raise RuntimeError("OpenStreetMap returned an unreadable safe-spot response.") from exc

@@ -169,10 +169,11 @@ def trigger_sos(
                     from_=twilio_phone,
                     to=formatted_contact
                 )
-                log_runtime(f"[TWILIO] Sent SOS SMS to {formatted_contact}. SID: {msg.sid}")
-                alert["emergency_contact_notification"] = "SENT"
+                log_runtime(f"[TWILIO] Provider accepted SOS SMS request for {formatted_contact}. SID: {msg.sid}")
+                alert["emergency_contact_notification"] = "PROVIDER_ACCEPTED"
                 alert["notification_provider"] = "TWILIO"
                 alert["notification_id"] = msg.sid
+                alert["notification_provider_status"] = str(getattr(msg, "status", "accepted")).upper()
             except Exception as e:
                 log_runtime(f"[TWILIO ERROR] Failed to send SOS SMS: {e}")
                 alert["emergency_contact_notification"] = "FAILED"
@@ -205,7 +206,7 @@ def send_risk_warning_sms(user_name: str, emergency_contact: str, lat: float, ln
             from_=twilio_phone,
             to=formatted_contact
         )
-        log_runtime(f"[TWILIO] Sent High-Risk Warning SMS to {formatted_contact}. SID: {msg.sid}")
+        log_runtime(f"[TWILIO] Provider accepted High-Risk Warning SMS request for {formatted_contact}. SID: {msg.sid}")
         return True
     except Exception as e:
         log_runtime(f"[TWILIO ERROR] Failed to send High-Risk Warning SMS: {e}")
@@ -236,7 +237,7 @@ def send_battery_warning_sms(user_name: str, emergency_contact: str, lat: float,
             from_=twilio_phone,
             to=formatted_contact
         )
-        log_runtime(f"[TWILIO] Sent Low Battery Warning SMS to {formatted_contact}. SID: {msg.sid}")
+        log_runtime(f"[TWILIO] Provider accepted Low Battery Warning SMS request for {formatted_contact}. SID: {msg.sid}")
         return True
     except Exception as e:
         log_runtime(f"[TWILIO ERROR] Failed to send Low Battery Warning SMS: {e}")

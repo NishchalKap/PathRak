@@ -3,19 +3,26 @@ import { cancelSafeWalk, extendSafeWalk, startSafeWalk } from "../api";
 import Icon from "../components/Icon";
 import { LocationStatus, Notice, PageHeader, StatusPill } from "../components/UI";
 
-export default function SafeWalkPage({ userInfo, currentPos, locationError, monitor, isSubComponent }) {
+export default function SafeWalkPage({ userInfo, currentPos, locationError, monitor, isSubComponent, routePlan, appConfig }) {
   const { sw } = monitor || {};
   const [etaMinutes, setEtaMinutes] = useState(15);
   const [destination, setDestination] = useState("");
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
+  const [demoExpiry, setDemoExpiry] = useState(false);
   const voiceIntervalRef = useRef(null);
 
   useEffect(() => () => {
     clearInterval(voiceIntervalRef.current);
     window.speechSynthesis?.cancel();
   }, []);
+
+  useEffect(() => {
+    if (!routePlan || sw?.active) return;
+    setDestination(routePlan.destination || "");
+    if (routePlan.distanceM) setEtaMinutes(Math.max(1, Math.ceil(routePlan.distanceM / 80)));
+  }, [routePlan, sw?.active]);
 
   if (!monitor) return null;
 
@@ -44,7 +51,7 @@ export default function SafeWalkPage({ userInfo, currentPos, locationError, moni
     setWorking(true);
     setError("");
     try {
-      const response = await startSafeWalk(userInfo.user_id, userInfo.name, destination.trim(), etaMinutes, currentPos[0], currentPos[1], userInfo.emergency_contact || "");
+      const response = await startSafeWalk(userInfo.user_id, userInfo.name, destination.trim(), etaMinutes, currentPos[0], currentPos[1], userInfo.emergency_contact || "", demoExpiry ? 15 : null);
       if (!response?.eta) throw new Error("The server did not return an ETA.");
       sw.setDestination(destination.trim());
       sw.setEtaTime(new Date(response.eta));
@@ -108,6 +115,8 @@ export default function SafeWalkPage({ userInfo, currentPos, locationError, moni
             <div className="panel-heading"><span className="panel-icon"><Icon name="walk" /></span><div><h2>Start a monitored journey</h2><p>Tell PathRak where you are going and when you expect to arrive.</p></div></div>
             <div className="field"><label htmlFor={`destination-${isSubComponent ? "embedded" : "page"}`}>Destination</label><input id={`destination-${isSubComponent ? "embedded" : "page"}`} className="input" value={destination} onChange={(event) => setDestination(event.target.value)} placeholder="Home, station, campus..." autoComplete="street-address" /></div>
             <div className="field"><div className="range-label"><label htmlFor={`eta-${isSubComponent ? "embedded" : "page"}`}>Expected journey time</label><strong>{etaMinutes} min</strong></div><input id={`eta-${isSubComponent ? "embedded" : "page"}`} type="range" min="1" max="120" value={etaMinutes} onChange={(event) => setEtaMinutes(Number(event.target.value))} className="range-input" /><div className="range-hints"><span>1 min</span><span>2 hours</span></div></div>
+            {routePlan && <Notice tone="info" title="Route-linked ETA">Destination came from Safe Route. The walking ETA is calculated from returned road distance at 4.8 km/h; this is an estimate, not live pedestrian navigation.</Notice>}
+            {appConfig?.demo_mode && <label className="readiness-row"><input type="checkbox" checked={demoExpiry} onChange={(event) => setDemoExpiry(event.target.checked)} /><span><strong>15-second expiry demonstration</strong><small>Explicit demo control. It records an SOS event but never claims police dispatch.</small></span></label>}
             {error && <Notice tone="warning" title="SafeWalk unavailable">{error}</Notice>}
             <button className="btn btn-primary journey-start" disabled={working || !currentPos || !userInfo?.user_id} onClick={startJourney}><Icon name="shield" />{working ? "Starting SafeWalk..." : "Start SafeWalk"}</button>
           </section>

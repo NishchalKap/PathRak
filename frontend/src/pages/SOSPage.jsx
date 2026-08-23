@@ -66,16 +66,16 @@ export default function SOSPage({ userInfo, onEditProfile, currentPos, locationE
         new Notification("Nearby emergency alert", { body: `A PathRak user near ${alert.nearest_helper.name} needs help.`, icon: "/favicon.ico" });
       }
     } catch (recordError) {
-      setError(`${recordError.message}. PathRak is opening an SMS draft; sending still requires your confirmation.`);
+      setError(`${recordError.message}. No external message was sent. You can open a device SMS draft below.`);
       navigator.vibrate?.([500, 200, 500]);
-      const mapsLink = `https://maps.google.com/?q=${currentPos[0]},${currentPos[1]}`;
-      window.location.href = `sms:${userInfo.emergency_contact || ""}?body=${encodeURIComponent(`SOS! I need help. My live location: ${mapsLink}`)}`;
     } finally {
       setSending(false);
     }
   };
 
   const dispatchConfigured = result?.police_dispatch && !["NOT_CONFIGURED", "Unavailable"].includes(result.police_dispatch);
+  const mapsLink = currentPos ? `https://maps.google.com/?q=${currentPos[0]},${currentPos[1]}` : "";
+  const smsHref = `sms:${userInfo?.emergency_contact || ""}?body=${encodeURIComponent(`SOS! I need help. My location: ${mapsLink}`)}`;
 
   return (
     <div className="page-stack sos-page">
@@ -95,6 +95,8 @@ export default function SOSPage({ userInfo, onEditProfile, currentPos, locationE
             <div className="section-heading compact"><div><p className="eyebrow">Before activation</p><h2>Emergency readiness</h2></div></div>
             <LocationStatus currentPos={currentPos} error={locationError} />
             <div className="readiness-row"><span className={userInfo ? "ready-dot" : "warning-dot"} /><span><strong>{userInfo ? "Emergency profile ready" : "Emergency profile missing"}</strong><small>{userInfo ? `${userInfo.name} · ${userInfo.emergency_contact}` : "Name and contact are required"}</small></span><button className="text-button" onClick={onEditProfile}>{userInfo ? "Edit" : "Set up"}<Icon name="chevron" size={14} /></button></div>
+            {userInfo?.emergency_contact && <div className="journey-controls"><a className="btn btn-secondary" href={`tel:${userInfo.emergency_contact}`}><Icon name="phone" />Call emergency contact</a><a className="btn btn-secondary" href={smsHref}>Open SMS draft</a></div>}
+            {userInfo?.emergency_contact && <small>Your device decides whether `tel:` and `sms:` links are supported. PathRak does not claim a call or message was completed.</small>}
             <div className="field"><label htmlFor="sos-message">Situation note <span className="optional-label">Optional</span></label><textarea id="sos-message" className="input" value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Briefly describe what is happening" rows="3" /></div>
           </section>
 

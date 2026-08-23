@@ -43,6 +43,7 @@ export default function LightingPage({ currentPos, locationError, theme }) {
   const [hour, setHour] = useState(new Date().getHours());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [source, setSource] = useState(null);
   const segments = buildSegments(zones);
 
   const loadLighting = async () => {
@@ -54,6 +55,7 @@ export default function LightingPage({ currentPos, locationError, theme }) {
       const totals = await getLightingSavings(mapData.total || mapData.zones?.length || 100);
       setZones(mapData.zones || []);
       setSavings(totals);
+      setSource({ id: mapData.source, note: mapData.source_note });
     } catch (loadError) {
       setError(loadError.message || "Street-lighting data is unavailable.");
     } finally {
@@ -65,13 +67,14 @@ export default function LightingPage({ currentPos, locationError, theme }) {
 
   return (
     <div className="page-stack lighting-page">
-      <PageHeader eyebrow="Infrastructure awareness" title="Street lighting" description="Review working, broken, and missing lighting coverage returned by the PathRak data service." actions={<StatusPill tone={segments.length ? "success" : currentPos ? "neutral" : "warning"} icon="light">{segments.length ? `${segments.length} segments` : currentPos ? "Ready to load" : "Location required"}</StatusPill>} />
+      <PageHeader eyebrow="Infrastructure awareness" title="Street lighting" description="Explore a clearly disclosed lighting-control simulation around the selected location." actions={<StatusPill tone={segments.length ? "success" : currentPos ? "neutral" : "warning"} icon="light">{segments.length ? `${segments.length} segments` : currentPos ? "Ready to load" : "Location required"}</StatusPill>} />
       <section className="panel map-toolbar"><div className="time-control"><div><label htmlFor="lighting-hour">Displayed hour</label><strong>{String(hour).padStart(2, "0")}:00</strong></div><input id="lighting-hour" type="range" min="0" max="23" value={hour} onChange={(event) => setHour(Number(event.target.value))} /><small>Lighting behavior may change by time of day.</small></div><button className="btn btn-primary" disabled={loading || !currentPos} onClick={loadLighting}><Icon name="refresh" />{loading ? "Refreshing data..." : "Refresh lighting map"}</button></section>
       {error && <Notice tone="warning" title="Lighting service unavailable" action={<button className="btn btn-secondary" onClick={loadLighting}>Try again</button>}>{error}</Notice>}
+      {source && <Notice tone="info" title={source.id === "SIMULATED_DEMO_GRID" ? "Demo lighting grid" : "OpenStreetMap geometry"}>{source.note}</Notice>}
       <div className="metric-grid"><Metric label="Working" value={savings?.working_count ?? "—"} tone="safe" /><Metric label="Broken" value={savings?.not_working_count ?? "—"} tone="danger" /><Metric label="No street light" value={savings?.no_light_count ?? "—"} /><Metric label="Zones returned" value={savings?.total_zones ?? "—"} /></div>
       <div className="map-legend" aria-label="Lighting status legend">{Object.entries(STATUS_COLORS).map(([status, color]) => <span key={status}><i style={{ backgroundColor: color }} />{status}</span>)}</div>
       <div className="map-frame lighting-map"><MapContainer center={currentPos || MAP_PLACEHOLDER} zoom={14} style={{ height: "100%", width: "100%" }}>{currentPos && <RecenterMap center={currentPos} />}<TileLayer url={theme === "dark" ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"} attribution="&copy; OpenStreetMap &copy; CARTO" />{segments.map((segment) => <Polyline key={segment.id} positions={segment.positions} pathOptions={{ color: STATUS_COLORS[segment.status], opacity: segment.status === "No Street Light" ? .72 : .92, weight: segment.status === "No Street Light" ? 5 : 7, lineCap: "round" }}><Popup><strong>{segment.name}</strong><br />Status: {segment.status}<br />Brightness: {segment.brightness}%<br />Traffic: {segment.density}%<br /><small>{segment.mode}</small></Popup></Polyline>)}</MapContainer>{!currentPos && <div className="map-unavailable"><Icon name="location" size={28} /><strong>Location required</strong><p>PathRak does not display placeholder lighting data.</p></div>}</div>
-      {savings?.status_breakdown && <section className="panel data-disclosure"><div><h2>Returned dataset summary</h2><p>Counts reflect the selected data source, not a guarantee of live municipal infrastructure status.</p></div><div>{Object.entries(savings.status_breakdown).map(([status, count]) => <span key={status}><i style={{ backgroundColor: STATUS_COLORS[status] }} />{status}: <strong>{count}</strong></span>)}</div></section>}
+      {savings?.status_breakdown && <section className="panel data-disclosure"><div><h2>Simulated scenario summary</h2><p>{savings.method || "These counts are modeled demo values, not measured municipal infrastructure status."}</p></div><div>{Object.entries(savings.status_breakdown).map(([status, count]) => <span key={status}><i style={{ backgroundColor: STATUS_COLORS[status] }} />{status}: <strong>{count}</strong></span>)}</div></section>}
     </div>
   );
 }

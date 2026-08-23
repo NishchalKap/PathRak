@@ -99,7 +99,7 @@ function LocationSearch({ label, value, onChange }) {
   );
 }
 
-export default function RoutePage({ currentPos, theme }) {
+export default function RoutePage({ currentPos, theme, onStartSafeWalk, appConfig }) {
   const [start, setStart] = useState(null);
   const [end, setEnd] = useState(null);
   const [hour, setHour] = useState(new Date().getHours());
@@ -108,11 +108,9 @@ export default function RoutePage({ currentPos, theme }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [selectedRoute, setSelectedRoute] = useState(0);
-  const [isVoiceOn, setIsVoiceOn] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [voiceStepIndex, setVoiceStepIndex] = useState(0);
   const [startEdited, setStartEdited] = useState(false);
   const [dataMode, setDataMode] = useState(null);
+  const [routingProvider, setRoutingProvider] = useState(null);
 
   useEffect(() => {
     if (!currentPos || startEdited) return;
@@ -161,6 +159,7 @@ export default function RoutePage({ currentPos, theme }) {
 
       setRoutes(unique);
       setDataMode(data.data_mode || null);
+      setRoutingProvider(data.routing_provider || null);
       setSelectedRoute(0);
     } catch (err) {
       console.error("Error finding safe route:", err);
@@ -176,49 +175,7 @@ export default function RoutePage({ currentPos, theme }) {
   }, []);
 
   const safest = routes.find(r => r.is_safest) || routes[0];
-
-  // --- Voice helpers (simple TTS turn steps based on coordinates) ---
-  const haversineMeters = (a, b) => {
-    const toRad = v => (v * Math.PI) / 180;
-    const R = 6371000;
-    const dLat = toRad(b[0] - a[0]);
-    const dLon = toRad(b[1] - a[1]);
-    const lat1 = toRad(a[0]);
-    const lat2 = toRad(b[0]);
-    const sinDlat = Math.sin(dLat / 2);
-    const sinDlon = Math.sin(dLon / 2);
-    const aa = sinDlat * sinDlat + Math.cos(lat1) * Math.cos(lat2) * sinDlon * sinDlon;
-    const c = 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
-    return R * c;
-  };
-
-  const bearingToCardinal = (a, b) => {
-    const toRad = v => (v * Math.PI) / 180;
-    const toDeg = v => (v * 180) / Math.PI;
-    const lat1 = toRad(a[0]);
-    const lat2 = toRad(b[0]);
-    const dLon = toRad(b[1] - a[1]);
-    const y = Math.sin(dLon) * Math.cos(lat2);
-    const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
-    const brng = (toDeg(Math.atan2(y, x)) + 360) % 360;
-    const dirs = ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"];
-    return dirs[Math.round(brng / 45) % 8];
-  };
-
-  const buildSteps = (route) => {
-    if (!route || !route.coordinates || route.coordinates.length < 2) return [];
-    const coords = route.coordinates;
-    const steps = [];
-    for (let i = 0; i < coords.length - 1; i++) {
-      const a = coords[i];
-      const b = coords[i + 1];
-      const meters = Math.round(haversineMeters(a, b));
-      const dir = bearingToCardinal(a, b);
-      steps.push({ text: `Head ${dir} for ${meters} meters.`, coords: b, distance: meters });
-    }
-    steps.push({ text: `You have arrived at your destination.`, coords: coords[coords.length - 1], distance: 0 });
-    return steps;
-  };
+  const chosenRoute = routes[selectedRoute] || safest;
 
   const speak = (text, onend) => {
     if (!window.speechSynthesis) return;
@@ -227,53 +184,6 @@ export default function RoutePage({ currentPos, theme }) {
     u.onend = onend;
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(u);
-    setIsSpeaking(true);
-  };
-
-  const stopSpeaking = () => {
-    if (window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-    }
-    setIsSpeaking(false);
-  };
-
-  const startVoiceNavigation = () => {
-    if (!safest) return;
-    const steps = buildSteps(safest);
-    if (!steps.length) return;
-    setIsVoiceOn(true);
-    setVoiceStepIndex(0);
-    // speak initial summary then start steps
-    const summary = `Starting voice navigation. Recommended safety score ${safest.score} out of 100. ${safest.label}.`;
-    speak(summary, () => {
-      // after summary, speak step 0
-      speak(steps[0].text, () => {
-        setIsSpeaking(false);
-        setVoiceStepIndex(0);
-      });
-    });
-  };
-
-  const speakNextStep = () => {
-    if (!safest) return;
-    const steps = buildSteps(safest);
-    const next = Math.min(voiceStepIndex + 1, steps.length - 1);
-    setVoiceStepIndex(next);
-    speak(steps[next].text, () => setIsSpeaking(false));
-  };
-
-  const speakPrevStep = () => {
-    if (!safest) return;
-    const steps = buildSteps(safest);
-    const prev = Math.max(0, voiceStepIndex - 1);
-    setVoiceStepIndex(prev);
-    speak(steps[prev].text, () => setIsSpeaking(false));
-  };
-
-  const stopVoiceNavigation = () => {
-    stopSpeaking();
-    setIsVoiceOn(false);
-    setVoiceStepIndex(0);
   };
 
   return (
@@ -283,11 +193,12 @@ export default function RoutePage({ currentPos, theme }) {
       <section className="panel route-planner">
         <div className="route-fields"><LocationSearch label="Start location" value={start} onChange={(value) => { setStartEdited(true); setStart(value); }} /><span className="route-connector" /><LocationSearch label="Destination" value={end} onChange={setEnd} /></div>
         <div className="departure-field"><div><label htmlFor="departure-hour">Departure hour</label><strong>{String(hour).padStart(2, "0")}:00</strong></div><input id="departure-hour" type="range" min="0" max="23" value={hour} onChange={(event) => setHour(Number(event.target.value))} /><small>Current time {currentTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small></div>
-        <button className="btn btn-primary route-submit" onClick={handleFind} disabled={loading || !start || !end}><Icon name="route" />{loading ? "Calculating real routes..." : "Find safer routes"}</button>
+        <div className="journey-controls"><button className="btn btn-primary route-submit" onClick={handleFind} disabled={loading || !start || !end}><Icon name="route" />{loading ? "Calculating real routes..." : "Find safer routes"}</button>{appConfig?.demo_mode && <button className="btn btn-secondary" onClick={() => { setStartEdited(true); setStart(appConfig.demo.start); setEnd(appConfig.demo.destination); setRoutes([]); setError(""); }}>Load Bengaluru demo route</button>}</div>
       </section>
 
       {error && <Notice tone="warning" title="Route service unavailable" action={<button className="btn btn-secondary" onClick={handleFind} disabled={loading}>Try again</button>}>{error} No route has been fabricated.</Notice>}
       {dataMode === "DEMO" && <Notice tone="warning" title="Demonstration risk data">Route geometry is real when returned by the provider, but safety scores use synthetic incidents and are not real-world safety guidance.</Notice>}
+      {routingProvider === "OSRM_DEMO" && <Notice tone="info" title="Public demo routing">This is a real road route from the public OSRM demo server using a driving-road profile. It is not pedestrian navigation, and alternatives are not guaranteed.</Notice>}
 
       <div className={`route-workspace ${routes.length ? "has-routes" : ""}`}>
         <div className="map-frame route-map">
@@ -317,7 +228,7 @@ export default function RoutePage({ currentPos, theme }) {
           {!routes.length ? <div className="panel route-empty"><span><Icon name="route" size={26} /></span><h2>No route calculated yet</h2><p>Choose a destination to compare available road routes, travel time, distance, and risk score.</p></div> : <>
             <div className="route-result-heading"><p className="eyebrow">Route alternatives</p><h2>Choose your route</h2></div>
             <div className="route-options">{routes.map((route, index) => { const selected = selectedRoute === index; const style = scoreStyle(route.score); return <button key={index} className={`route-option tone-${style.tone} ${selected ? "is-selected" : ""}`} onClick={() => setSelectedRoute(index)}><span className="route-index">{index + 1}</span><span className="route-copy"><strong>{route.is_safest ? "Recommended route" : `Alternative ${index + 1}`}</strong><small>{route.label} · Average risk {route.avg_risk}/5</small>{route.distance_m && <small>{(route.distance_m / 1000).toFixed(1)} km · {Math.round(route.duration_s / 60)} min</small>}</span><span className="route-score"><strong>{route.score}</strong><small>/100</small></span></button>; })}</div>
-            {safest && <section className="voice-panel"><div><p className="eyebrow">Recommended</p><h3>{start?.name?.split(",")[0]} to {end?.name?.split(",")[0]}</h3><p>{safest.label} · Safety score {safest.score}/100</p></div><div className="voice-actions"><button className="btn btn-secondary" onClick={isVoiceOn ? stopVoiceNavigation : startVoiceNavigation}>{isVoiceOn ? "Stop voice" : "Start voice guidance"}</button><button className="btn btn-quiet" onClick={() => speak(`Summary: ${safest.label}. Safety ${safest.score} out of 100.`)}>Speak summary</button>{isVoiceOn && <><button className="btn btn-quiet" onClick={speakPrevStep}>Previous</button><button className="btn btn-quiet" onClick={speakNextStep}>Next</button></>}</div></section>}
+            {safest && <section className="voice-panel"><div><p className="eyebrow">Recommended</p><h3>{start?.name?.split(",")[0]} to {end?.name?.split(",")[0]}</h3><p>{safest.label} · Safety score {safest.score}/100</p></div><div className="voice-actions"><button className="btn btn-primary" onClick={() => onStartSafeWalk?.({ destination: end.name, distanceM: chosenRoute.distance_m, coordinates: chosenRoute.coordinates, provider: routingProvider })}>Use selected route in SafeWalk</button><button className="btn btn-quiet" onClick={() => speak(`Route summary: ${safest.label}. Safety score ${safest.score} out of 100. Distance ${(safest.distance_m / 1000).toFixed(1)} kilometers.`)}>Speak route summary</button></div></section>}
           </>}
         </aside>
       </div>

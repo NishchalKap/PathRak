@@ -1,12 +1,21 @@
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const API_TIMEOUT_MS = 30000;
+let authTokenProvider = null;
+
+export const setAuthTokenProvider = (provider) => {
+  authTokenProvider = provider;
+};
 
 const api = async (path, method = "GET", body = null) => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  const token = authTokenProvider ? await authTokenProvider() : null;
   const opts = {
     method,
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     signal: controller.signal,
   };
   if (body) opts.body = JSON.stringify(body);
@@ -23,6 +32,8 @@ const api = async (path, method = "GET", body = null) => {
     clearTimeout(timeout);
   }
 };
+
+export const getAppConfig = () => api("/api/config");
 
 export const getHeatmap = (center_lat, center_lng, hour, day_of_week) =>
   api("/api/heatmap", "POST", { center_lat, center_lng, hour, day_of_week });
@@ -43,6 +54,8 @@ export const getLightingSavings = (num_zones = 100) =>
 
 export const registerUser = (user_id, name, emergency_contact, medical_details, lat, lng) =>
   api("/api/users/register", "POST", { user_id, name, emergency_contact, medical_details, lat, lng });
+
+export const deleteUserProfile = () => api("/api/users/profile", "DELETE");
 
 export const getNearestHelper = (lat, lng, exclude_user_id) =>
   api(`/api/users/nearest-helper?lat=${lat}&lng=${lng}${exclude_user_id ? `&exclude_user_id=${exclude_user_id}` : ""}`);
@@ -67,14 +80,14 @@ export const reportDangerPin = (lat, lng, type, description) =>
   api("/api/pins/report", "POST", { lat, lng, type, description });
 export const getDangerPins = () => api("/api/pins");
 
-export const startSafeWalk = (user_id, user_name, destination, eta_minutes, lat, lng, emergency_contact) =>
-  api("/api/safewalk/start", "POST", { user_id, user_name, destination, eta_minutes, lat, lng, emergency_contact });
+export const startSafeWalk = (user_id, user_name, destination, eta_minutes, lat, lng, emergency_contact, demo_expiry_seconds = null) =>
+  api("/api/safewalk/start", "POST", { user_id, user_name, destination, eta_minutes, lat, lng, emergency_contact, demo_expiry_seconds });
 export const cancelSafeWalk = (user_id) =>
-  api(`/api/safewalk/cancel?user_id=${user_id}`, "POST");
+  api("/api/safewalk/cancel", "POST");
 export const extendSafeWalk = (user_id, minutes) =>
-  api(`/api/safewalk/extend?user_id=${user_id}&minutes=${minutes}`, "POST");
+  api(`/api/safewalk/extend?minutes=${minutes}`, "POST");
 export const expireSafeWalk = (user_id) =>
-  api(`/api/safewalk/expire?user_id=${user_id}`, "POST");
+  api("/api/safewalk/expire", "POST");
 
 export const getSafeSpots = (lat, lng, radius = 2000) =>
   api(`/api/safe-spots?lat=${lat}&lng=${lng}&radius=${radius}`);

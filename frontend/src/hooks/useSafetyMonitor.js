@@ -106,7 +106,7 @@ export function useSafetyMonitor(userInfo, currentPos) {
           if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 500]);
           
           if ("Notification" in window && Notification.permission === "granted") {
-            new Notification("⚠️ High Risk Zone Alert", {
+            new Notification("High Risk Zone Alert", {
               body: "You have entered a high-risk area. Stay alert and keep your SOS ready.",
               icon: "/favicon.ico",
             });
@@ -137,14 +137,13 @@ export function useSafetyMonitor(userInfo, currentPos) {
               
               if (navigator.vibrate) navigator.vibrate([200, 200, 200]);
               
+              const notificationResult = await notifyBattery(currentPos[0], currentPos[1], userInfo.name, userInfo.emergency_contact, level).catch(() => null);
               if ("Notification" in window && Notification.permission === "granted") {
-                new Notification("🔋 Low Battery Alert", {
-                  body: "Your battery is critically low. We've notified your emergency contact.",
+                new Notification("Low Battery Alert", {
+                  body: notificationResult?.success ? "Twilio accepted the emergency-contact SMS request." : "No emergency-contact SMS was sent. Open PathRak to review provider setup.",
                   icon: "/favicon.ico",
                 });
               }
-              
-              notifyBattery(currentPos[0], currentPos[1], userInfo.name, userInfo.emergency_contact, level).catch(() => {});
             }
           }
         }

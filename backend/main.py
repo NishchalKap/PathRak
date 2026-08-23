@@ -10,6 +10,8 @@ env_path = os.path.join(os.path.dirname(__file__), ".env")
 load_dotenv(dotenv_path=env_path)
 
 from data_config import DATA_DIR, data_metadata
+from auth import require_clerk_user
+from demo_config import DEMO_MODE, OSRM_BASE_URL, ROUTING_PROVIDER, capability_config
 
 from model import (
     generate_heatmap,
@@ -20,10 +22,11 @@ from model import (
 from lighting import (
     get_zone_lighting,
     generate_lighting_map,
+    generate_demo_street_grid,
     calculate_city_savings,
 )
 from sos import trigger_sos, get_sos_log, find_nearest_station, find_all_stations, send_risk_warning_sms, send_battery_warning_sms
-from users import register_user, find_nearest_user
+from users import deactivate_user, register_user, find_nearest_user
 from safewalk import SafeWalkStartRequest, start_safe_walk, cancel_safe_walk, extend_safe_walk, expire_safe_walk, check_active_walks
 from safespots import get_safe_spots
 import asyncio
@@ -43,7 +46,7 @@ ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -127,6 +130,10 @@ def root():
 def health():
     return {"status": "ok", "timestamp": datetime.now().isoformat(), **data_metadata()}
 
+@app.get("/api/config")
+def api_config():
+    return capability_config()
+
 # ── Heatmap & Risk ─────────────────────────────────────────────────────────────
 
 @app.post("/api/heatmap")
@@ -203,30 +210,52 @@ def find_safe_route(req: RouteRequest):
     hour  = req.hour if req.hour is not None else now.hour
     dow   = req.day_of_week if req.day_of_week is not None else now.weekday()
 
-    # FIX: Load API key from environment variable — never hardcode secrets
-    ORS_KEY = os.getenv("ORS_API_KEY", "")
-    if not ORS_KEY:
-        raise HTTPException(
-            status_code=503,
-            detail="ORS_API_KEY is not configured; real road-route alternatives are unavailable.",
-        )
-
     try:
-        res = req_lib.post(
-            "https://api.openrouteservice.org/v2/directions/driving-car/geojson",
-            headers={"Authorization": ORS_KEY, "Content-Type": "application/json"},
-            json={
-                "coordinates": [[start.lng, start.lat], [end.lng, end.lat]],
-                "alternative_routes": {
-                    "share_factor": 0.3,
-                    "target_count": 3,
-                    "weight_factor": 2.0
+        if ROUTING_PROVIDER == "ors":
+            ors_key = os.getenv("ORS_API_KEY", "")
+            if not ors_key:
+                raise HTTPException(
+                    status_code=503,
+                    detail="ORS_API_KEY is not configured; real road-route alternatives are unavailable.",
+                )
+            res = req_lib.post(
+                "https://api.openrouteservice.org/v2/directions/driving-car/geojson",
+                headers={"Authorization": ors_key, "Content-Type": "application/json"},
+                json={
+                    "coordinates": [[start.lng, start.lat], [end.lng, end.lat]],
+                    "alternative_routes": {
+                        "share_factor": 0.3,
+                        "target_count": 3,
+                        "weight_factor": 2.0,
+                    },
                 },
-            },
-            timeout=10,  # FIX: Always set a timeout for external HTTP calls
-        )
-        res.raise_for_status()
-        features = res.json().get("features", [])
+                timeout=15,
+            )
+            res.raise_for_status()
+            features = res.json().get("features", [])
+        elif ROUTING_PROVIDER == "osrm_demo" and DEMO_MODE:
+            coordinates = f"{start.lng},{start.lat};{end.lng},{end.lat}"
+            res = req_lib.get(
+                f"{OSRM_BASE_URL}/route/v1/driving/{coordinates}",
+                params={"alternatives": 3, "steps": "false", "geometries": "geojson", "overview": "full"},
+                headers={"User-Agent": "PathRak/1.0 hackathon demo"},
+                timeout=20,
+            )
+            res.raise_for_status()
+            payload = res.json()
+            if payload.get("code") != "Ok":
+                raise HTTPException(status_code=502, detail=payload.get("message", "OSRM returned no route."))
+            features = [
+                {
+                    "geometry": route["geometry"],
+                    "properties": {"summary": {"distance": route["distance"], "duration": route["duration"]}},
+                }
+                for route in payload.get("routes", [])
+            ]
+        else:
+            raise HTTPException(status_code=503, detail="No supported routing provider is configured.")
+    except HTTPException:
+        raise
     except req_lib.exceptions.Timeout:
         raise HTTPException(status_code=504, detail="Route service timed out.")
     except req_lib.exceptions.HTTPError as e:
@@ -262,7 +291,14 @@ def find_safe_route(req: RouteRequest):
     if scored_routes:
         scored_routes[0]["is_safest"] = True
 
-    return {"routes": scored_routes, "total": len(scored_routes), **data_metadata()}
+    return {
+        "routes": scored_routes,
+        "total": len(scored_routes),
+        "routing_provider": "OPENROUTESERVICE" if ROUTING_PROVIDER == "ors" else "OSRM_DEMO",
+        "routing_profile": "driving-car",
+        "route_alternatives_note": "The provider may return fewer alternatives when no sufficiently distinct route exists.",
+        **data_metadata(),
+    }
 
 # ── Lighting ───────────────────────────────────────────────────────────────────
 
@@ -277,11 +313,30 @@ def lighting_zone(req: LightingRequest):
 def lighting_map(req: HeatmapRequest):
     now  = datetime.now()
     hour = req.hour if req.hour is not None else now.hour
+    if DEMO_MODE:
+        zones = generate_demo_street_grid(req.center_lat, req.center_lng, hour)
+        return {
+            "zones": zones,
+            "total": len(zones),
+            "hour": hour,
+            "source": "SIMULATED_DEMO_GRID",
+            "source_note": "Geometry, lighting, and traffic are explicit demo simulations centered on the selected location.",
+            "lighting_status": "SIMULATED",
+        }
     try:
         zones = generate_lighting_map(req.center_lat, req.center_lng, hour)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    return {"zones": zones, "total": len(zones), "hour": hour}
+        source = "OPENSTREETMAP_ROAD_GEOMETRY"
+        source_note = "Road geometry came from OpenStreetMap Overpass. Lighting and traffic states are simulated."
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Lighting geometry provider unavailable: {exc}") from exc
+    return {
+        "zones": zones,
+        "total": len(zones),
+        "hour": hour,
+        "source": source,
+        "source_note": source_note,
+        "lighting_status": "SIMULATED",
+    }
 
 @app.get("/api/lighting/savings")
 def lighting_savings(num_zones: int = 100):
@@ -295,30 +350,36 @@ def lighting_savings(num_zones: int = 100):
 # ── Users ──────────────────────────────────────────────────────────────────────
 
 @app.post("/api/users/register")
-def user_register(req: UserRegisterRequest):
+def user_register(req: UserRegisterRequest, claims: dict = Depends(require_clerk_user)):
     try:
-        user   = register_user(req.user_id, req.name, req.emergency_contact, req.medical_details, req.lat, req.lng)
-        helper = find_nearest_user(req.lat, req.lng, exclude_user_id=req.user_id)
+        user_id = claims["sub"]
+        user   = register_user(user_id, req.name, req.emergency_contact, req.medical_details, req.lat, req.lng)
+        helper = find_nearest_user(req.lat, req.lng, exclude_user_id=user_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     return {"user": user, "nearest_helper": helper}
 
 @app.get("/api/users/nearest-helper")
-def nearest_helper(lat: float, lng: float, exclude_user_id: Optional[str] = None):
+def nearest_helper(lat: float, lng: float, claims: dict = Depends(require_clerk_user)):
     if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
         raise HTTPException(status_code=400, detail="Invalid coordinates")
-    helper = find_nearest_user(lat, lng, exclude_user_id)
+    helper = find_nearest_user(lat, lng, claims["sub"])
     return {"nearest_helper": helper}
+
+@app.delete("/api/users/profile")
+def delete_user_profile(claims: dict = Depends(require_clerk_user)):
+    removed = deactivate_user(claims["sub"])
+    return {"status": "deleted" if removed else "not_found"}
 
 # ── SOS ────────────────────────────────────────────────────────────────────────
 
 @app.post("/api/sos/trigger")
-def sos_trigger(req: SOSRequest):
+def sos_trigger(req: SOSRequest, claims: dict = Depends(require_clerk_user)):
     try:
         alert = trigger_sos(
             lat=req.lat,
             lng=req.lng,
-            user_id=req.user_id,
+            user_id=claims["sub"],
             user_name=req.user_name or "Anonymous",
             message=req.message or "",
             emergency_contact=req.emergency_contact or "",
@@ -329,13 +390,13 @@ def sos_trigger(req: SOSRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    helper = find_nearest_user(req.lat, req.lng, exclude_user_id=req.user_id)
+    helper = find_nearest_user(req.lat, req.lng, exclude_user_id=claims["sub"])
     if helper:
         alert["nearest_helper"] = helper
     return alert
 
 @app.post("/api/sos/notify-risk")
-def notify_risk_zone(req: SOSRequest):
+def notify_risk_zone(req: SOSRequest, claims: dict = Depends(require_clerk_user)):
     try:
         success = send_risk_warning_sms(
             req.user_name or "Anonymous",
@@ -343,7 +404,7 @@ def notify_risk_zone(req: SOSRequest):
             req.lat,
             req.lng
         )
-        return {"success": success, "message": "Risk warning SMS sent" if success else "Failed to send SMS"}
+        return {"success": success, "message": "Twilio accepted the risk-warning SMS request" if success else "No SMS request was accepted"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -355,7 +416,7 @@ class BatteryRequest(BaseModel):
     battery_level: int = Field(..., ge=0, le=100)
 
 @app.post("/api/sos/notify-battery")
-def notify_battery_low(req: BatteryRequest):
+def notify_battery_low(req: BatteryRequest, claims: dict = Depends(require_clerk_user)):
     try:
         success = send_battery_warning_sms(
             req.user_name or "Anonymous",
@@ -364,13 +425,13 @@ def notify_battery_low(req: BatteryRequest):
             req.lng,
             req.battery_level
         )
-        return {"success": success, "message": "Battery warning SMS sent" if success else "Failed to send SMS"}
+        return {"success": success, "message": "Twilio accepted the battery-warning SMS request" if success else "No SMS request was accepted"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/sos/log")
-def sos_log():
-    log = get_sos_log()
+def sos_log(claims: dict = Depends(require_clerk_user)):
+    log = [alert for alert in get_sos_log() if alert.get("user_id") == claims["sub"]]
     return {"alerts": log, "total": len(log)}
 
 @app.get("/api/sos/nearest-station")
@@ -390,7 +451,7 @@ def nearest_station(lat: float, lng: float):
 # ── Crowd-Sourced Pins ─────────────────────────────────────────────────────────
 
 @app.post("/api/pins/report")
-def report_danger_pin(req: DangerPinRequest):
+def report_danger_pin(req: DangerPinRequest, claims: dict = Depends(require_clerk_user)):
     import json
     pins_file = os.path.join(os.path.dirname(__file__), "data", "danger_pins.json")
     pins = []
@@ -401,6 +462,7 @@ def report_danger_pin(req: DangerPinRequest):
             except json.JSONDecodeError:
                 pass
     new_pin = req.dict()
+    new_pin["reported_by"] = claims["sub"]
     new_pin["timestamp"] = datetime.now().isoformat()
     pins.append(new_pin)
     with open(pins_file, "w") as f:
@@ -422,28 +484,35 @@ def get_danger_pins():
 # ── Safe Walk Mode ─────────────────────────────────────────────────────────────
 
 @app.post("/api/safewalk/start")
-def api_start_safe_walk(req: SafeWalkStartRequest):
-    return start_safe_walk(req)
+def api_start_safe_walk(req: SafeWalkStartRequest, claims: dict = Depends(require_clerk_user)):
+    return start_safe_walk(req.model_copy(update={"user_id": claims["sub"]}))
 
 @app.post("/api/safewalk/cancel")
-def api_cancel_safe_walk(user_id: str):
-    return cancel_safe_walk(user_id)
+def api_cancel_safe_walk(claims: dict = Depends(require_clerk_user)):
+    return cancel_safe_walk(claims["sub"])
 
 @app.post("/api/safewalk/extend")
-def api_extend_safe_walk(user_id: str, minutes: int = 15):
+def api_extend_safe_walk(minutes: int = 15, claims: dict = Depends(require_clerk_user)):
     if minutes < 1 or minutes > 300:
         raise HTTPException(status_code=422, detail="minutes must be between 1 and 300")
-    return extend_safe_walk(user_id, minutes)
+    return extend_safe_walk(claims["sub"], minutes)
 
 @app.post("/api/safewalk/expire")
-def api_expire_safe_walk(user_id: str):
-    return expire_safe_walk(user_id)
+def api_expire_safe_walk(claims: dict = Depends(require_clerk_user)):
+    return expire_safe_walk(claims["sub"])
 
 # ── Safe Spots Layer ───────────────────────────────────────────────────────────
 
 @app.get("/api/safe-spots")
 def api_get_safe_spots(lat: float, lng: float, radius: int = 2000):
-    return get_safe_spots(lat, lng, radius)
+    if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
+        raise HTTPException(status_code=400, detail="Invalid coordinates")
+    if radius < 100 or radius > 10000:
+        raise HTTPException(status_code=422, detail="radius must be between 100 and 10000 metres")
+    try:
+        return get_safe_spots(lat, lng, radius)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 # ── Incident History Feed ───────────────────────────────────────────────────────
 

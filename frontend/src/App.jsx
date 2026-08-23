@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { UserButton, useUser } from "@clerk/react";
+import { UserButton, useAuth, useUser } from "@clerk/react";
 import Icon from "./components/Icon";
 import HomePage from "./pages/HomePage";
 import HeatmapPage from "./pages/HeatmapPage";
@@ -12,7 +12,7 @@ import SmartCheckPage from "./pages/SmartCheckPage";
 import FakeCallPage from "./pages/FakeCallPage";
 import SafeMonitoringPage from "./pages/SafeMonitoringPage";
 import LoginPage from "./pages/LoginPage";
-import { registerUser } from "./api";
+import { getAppConfig, registerUser, setAuthTokenProvider } from "./api";
 import { useSafetyMonitor } from "./hooks/useSafetyMonitor";
 
 const PRIMARY_NAV = [
@@ -46,16 +46,28 @@ const PAGE_COMPONENTS = {
 
 export default function App() {
   const { isLoaded, isSignedIn, user } = useUser();
+  const { getToken } = useAuth();
   const [page, setPage] = useState("home");
   const [userInfo, setUserInfo] = useState(null);
-  const [currentPos, setCurrentPos] = useState(null);
+  const [livePos, setLivePos] = useState(null);
   const [locationError, setLocationError] = useState("");
+  const [appConfig, setAppConfig] = useState(null);
+  const [locationMode, setLocationMode] = useState("live");
+  const [routePlan, setRoutePlan] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [installed, setInstalled] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
   const profileStorageKey = user?.id ? `pathrak_user_info:${user.id}` : null;
+  const demoPos = appConfig?.demo ? [appConfig.demo.start.lat, appConfig.demo.start.lng] : null;
+  const currentPos = locationMode === "demo" ? demoPos : livePos;
   const monitor = useSafetyMonitor(userInfo, currentPos);
+
+  useEffect(() => {
+    setAuthTokenProvider(() => getToken());
+    getAppConfig().then(setAppConfig).catch(() => setAppConfig(null));
+    return () => setAuthTokenProvider(null);
+  }, [getToken]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -89,7 +101,7 @@ export default function App() {
 
   useEffect(() => {
     if (!isSignedIn) {
-      setCurrentPos(null);
+      setLivePos(null);
       setLocationError("");
       return undefined;
     }
@@ -100,7 +112,7 @@ export default function App() {
 
     const watchId = navigator.geolocation.watchPosition(
       ({ coords }) => {
-        setCurrentPos([coords.latitude, coords.longitude]);
+        setLivePos([coords.latitude, coords.longitude]);
         setLocationError("");
       },
       (error) => {
@@ -169,6 +181,11 @@ export default function App() {
     onNavigate: navigate,
     onComplete: () => navigate("home"),
     onEditProfile: () => navigate("profile"),
+    appConfig,
+    locationMode,
+    routePlan,
+    setRoutePlan,
+    onStartSafeWalk: (plan) => { setRoutePlan(plan); navigate("walk"); },
   };
 
   if (!hasCompletedProfile) {
@@ -205,9 +222,10 @@ export default function App() {
       {mobileMenuOpen && <button className="drawer-backdrop" aria-label="Close navigation" onClick={() => setMobileMenuOpen(false)} />}
 
       <div className="app-main">
+        {appConfig?.demo_mode && <div className="demo-environment" role="status"><span><strong>Demo environment</strong><small>{locationMode === "demo" ? `Simulated · ${appConfig.demo.city}` : "Live GPS remains active"}</small></span><button className="text-button" onClick={() => setLocationMode(locationMode === "demo" ? "live" : "demo")}>{locationMode === "demo" ? "Use live GPS" : `Use ${appConfig.demo.city} demo location`}</button></div>}
         <header className="top-bar">
           <button className="icon-button mobile-only" onClick={() => setMobileMenuOpen(true)} aria-label="Open navigation"><Icon name="menu" /></button>
-          <div className="top-location"><span className={currentPos ? "signal-ready" : "signal-warning"} /><span>{currentPos ? "Location active" : "Location unavailable"}</span></div>
+          <div className="top-location"><span className={currentPos ? "signal-ready" : "signal-warning"} /><span>{currentPos ? locationMode === "demo" ? "Demo location active" : "Live location active" : "Location unavailable"}</span></div>
           <div className="top-actions">
             <button className="icon-button" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} aria-label={`Use ${theme === "dark" ? "light" : "dark"} theme`}><Icon name={theme === "dark" ? "sun" : "moon"} /></button>
             <UserButton afterSignOutUrl="/" />
