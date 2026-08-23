@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "build": "npm --prefix frontend run build",
-    "dev": "npm --prefix frontend run dev"
+    "dev": "npx vercel dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:split": "npm --prefix frontend run dev"
   }
 }

@@ -9,10 +9,12 @@ For the production-style single-origin local setup, configure the environment va
 ```powershell
 Copy-Item frontend/.env.local.example frontend/.env.local
 Copy-Item backend/.env.example backend/.env
-npx vercel dev
+npm run dev
 ```
 
 Open `http://localhost:3000`; the frontend and FastAPI `/api/*` routes share that origin. See [VERCEL_DEPLOYMENT.md](VERCEL_DEPLOYMENT.md) for deployment settings and serverless limitations.
+
+`npm run dev` now maps to `vercel dev` so the default local workflow matches the deployed Vercel routing model.
 
 The split development setup remains available when needed:
 
@@ -27,7 +29,7 @@ python -m uvicorn main:app --host 127.0.0.1 --port 8000
 cd frontend
 npm install
 Copy-Item .env.local.example .env.local
-npm run dev
+npm run dev:frontend
 ```
 
 Set the real Clerk values before starting. The API validates Clerk session JWTs for user registration, SOS, SOS history, danger reports, and SafeWalk mutations.

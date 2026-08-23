@@ -5,22 +5,35 @@ import App from "./App";
 import "./index.css";
 import "leaflet/dist/leaflet.css";
 
-ReactDOM.createRoot(document.getElementById("root")).render(
-  <React.StrictMode>
-    <ClerkProvider
-      afterSignOutUrl="/"
-      appearance={{
-        variables: {
-          colorPrimary: "#087f6d",
-          borderRadius: "0.75rem",
-          fontFamily: '"DM Sans", sans-serif',
-        },
-      }}
-    >
-      <App />
-    </ClerkProvider>
-  </React.StrictMode>
-);
+const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+const root = ReactDOM.createRoot(document.getElementById("root"));
+
+if (!clerkPublishableKey) {
+  root.render(
+    <div className="auth-loading" role="alert">
+      <strong>PathRak authentication is not configured</strong>
+      <p>VITE_CLERK_PUBLISHABLE_KEY was not included in this build.</p>
+    </div>,
+  );
+} else {
+  root.render(
+    <React.StrictMode>
+      <ClerkProvider
+        publishableKey={clerkPublishableKey}
+        afterSignOutUrl="/"
+        appearance={{
+          variables: {
+            colorPrimary: "#087f6d",
+            borderRadius: "0.75rem",
+            fontFamily: '"DM Sans", sans-serif',
+          },
+        }}
+      >
+        <App />
+      </ClerkProvider>
+    </React.StrictMode>,
+  );
+}
 
 if ("serviceWorker" in navigator) {
   let refreshing = false;

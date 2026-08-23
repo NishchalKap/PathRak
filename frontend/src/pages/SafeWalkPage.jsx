@@ -107,7 +107,7 @@ export default function SafeWalkPage({ userInfo, currentPos, locationError, moni
   return (
     <div className={`page-stack safewalk-page ${isSubComponent ? "embedded-page" : ""}`}>
       {!isSubComponent && <PageHeader eyebrow="Journey protection" title="SafeWalk" description="Set an expected arrival time. If you do not check in before it expires, PathRak records an emergency alert." actions={<StatusPill tone={sw.active ? "success" : "neutral"} icon={sw.active ? "check" : "clock"}>{sw.active ? "Monitoring active" : "Not active"}</StatusPill>} />}
-      {isSubComponent && <div className="embedded-heading"><div><p className="eyebrow">Journey protection</p><h2>SafeWalk</h2></div><StatusPill tone={sw.active ? "success" : "neutral"}>{sw.active ? "Active" : "Off"}</StatusPill></div>}
+      {isSubComponent && <div className="embedded-heading"><div><p className="eyebrow">Journey protection</p><h2>SafeWalk</h2><p className="embedded-description">Set a destination and expected arrival time for a monitored journey.</p></div><StatusPill tone={sw.active ? "success" : "neutral"}>{sw.active ? "Active" : "Off"}</StatusPill></div>}
 
       {!sw.active ? (
         <div className="journey-setup-grid">

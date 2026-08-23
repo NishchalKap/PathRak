@@ -78,7 +78,7 @@ export default function SmartCheckPage({ userInfo, onEditProfile, currentPos, lo
   return (
     <div className={`page-stack smartcheck-page ${isSubComponent ? "embedded-page" : ""}`}>
       {!isSubComponent && <PageHeader eyebrow="Timed check-in" title="Smart Check" description="Start a countdown and confirm you are safe before it expires. A missed check-in records an emergency alert." actions={<StatusPill tone={active ? "success" : sc.status === "alerted" ? "danger" : "neutral"} icon={active ? "check" : "clock"}>{active ? "Countdown active" : sc.status === "alerted" ? "Alert recorded" : "Not active"}</StatusPill>} />}
-      {isSubComponent && <div className="embedded-heading"><div><p className="eyebrow">Timed check-in</p><h2>Smart Check</h2></div><StatusPill tone={active ? "success" : "neutral"}>{active ? "Active" : "Off"}</StatusPill></div>}
+      {isSubComponent && <div className="embedded-heading"><div><p className="eyebrow">Timed check-in</p><h2>Smart Check</h2><p className="embedded-description">Choose a countdown and confirm you are safe before it expires.</p></div><StatusPill tone={active ? "success" : "neutral"}>{active ? "Active" : "Off"}</StatusPill></div>}
 
       <div className={`check-status panel ${active ? "is-active" : ""}`}>
         <div className="check-countdown"><span>{active ? "Time to check in" : "Selected countdown"}</span><strong>{formatTime(active ? sc.countdown : sc.timerMinutes * 60)}</strong><small>{active ? "Confirm before zero to prevent an alert." : "Choose how long PathRak should wait."}</small></div>

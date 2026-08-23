@@ -13,6 +13,20 @@ PathRak deploys as one Vercel project and one origin. Vercel builds the React/Vi
 - Python version: `3.12` from `.python-version`
 - Fluid Compute: enabled (Vercel default; its default function duration covers the existing provider timeouts)
 
+## Local Development
+
+Use the repository root so local development mirrors the deployed Vercel shape:
+
+```powershell
+Copy-Item frontend/.env.local.example frontend/.env.local
+Copy-Item backend/.env.example backend/.env
+npm run dev
+```
+
+`npm run dev` starts `vercel dev`, which serves the Vite frontend and the FastAPI function on one origin at `http://localhost:3000`.
+
+If you specifically need the old split frontend workflow, use `npm run dev:frontend` from the repository root and point `VITE_API_URL` at a separately running backend.
+
 Do not set `VITE_API_URL` in Vercel. The frontend uses relative `/api/...` URLs on the same deployment origin.
 
 ## Environment Variables
