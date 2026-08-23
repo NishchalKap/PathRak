@@ -1,4 +1,5 @@
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+// Production uses the current Vercel origin. The override is only for split local development.
+const BASE_URL = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
 const API_TIMEOUT_MS = 30000;
 let authTokenProvider = null;
 

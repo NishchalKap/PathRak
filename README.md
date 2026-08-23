@@ -4,6 +4,18 @@ PathRak is a React/FastAPI personal-safety demonstration. It combines live brows
 
 ## Quick Start
 
+For the production-style single-origin local setup, configure the environment values and run Vercel from the repository root:
+
+```powershell
+Copy-Item frontend/.env.local.example frontend/.env.local
+Copy-Item backend/.env.example backend/.env
+npx vercel dev
+```
+
+Open `http://localhost:3000`; the frontend and FastAPI `/api/*` routes share that origin. See [VERCEL_DEPLOYMENT.md](VERCEL_DEPLOYMENT.md) for deployment settings and serverless limitations.
+
+The split development setup remains available when needed:
+
 ```powershell
 cd backend
 python -m pip install -r requirements.txt
@@ -14,7 +26,7 @@ python -m uvicorn main:app --host 127.0.0.1 --port 8000
 ```powershell
 cd frontend
 npm install
-Copy-Item .env.example .env.local
+Copy-Item .env.local.example .env.local
 npm run dev
 ```
 
@@ -25,7 +37,7 @@ Set the real Clerk values before starting. The API validates Clerk session JWTs 
 Frontend:
 
 - `VITE_CLERK_PUBLISHABLE_KEY`: Clerk publishable key.
-- `VITE_API_URL`: FastAPI origin, normally `http://127.0.0.1:8000`.
+- `VITE_API_URL`: optional split-development FastAPI origin override. Leave unset for Vercel.
 
 Backend:
 
@@ -63,6 +75,7 @@ Demo mode never replaces GPS silently. Use the visible **Use Bengaluru demo loca
 - Lighting street geometry is live OSM data; light condition, traffic, and savings values are deterministic simulations.
 - Browser notifications, vibration, battery information, motion events, calling, and SMS drafts depend on device/browser support.
 - In-memory users, SafeWalks, and SOS events are lost when the API restarts. Use a database before production.
+- On Vercel, danger pins are temporary `/tmp` data and continuous SafeWalk expiry monitoring is disabled because functions are ephemeral.
 
 ## Verification
 

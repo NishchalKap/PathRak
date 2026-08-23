@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Depends
+from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, validator
 from typing import List, Optional
@@ -9,7 +10,7 @@ from dotenv import load_dotenv
 env_path = os.path.join(os.path.dirname(__file__), ".env")
 load_dotenv(dotenv_path=env_path)
 
-from data_config import DATA_DIR, data_metadata
+from data_config import DANGER_PINS_FILE, DATA_DIR, IS_VERCEL, data_metadata
 from auth import require_clerk_user
 from demo_config import DEMO_MODE, OSRM_BASE_URL, ROUTING_PROVIDER, capability_config
 
@@ -39,9 +40,15 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# ── CORS ───────────────────────────────────────────────────────────────────────
-# FIX: Restrict origins in production via environment variable instead of allow_origins=["*"]
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+# Same-origin Vercel requests do not use CORS; these defaults support split local development.
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "ALLOWED_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    ).split(",")
+    if origin.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,
@@ -52,7 +59,8 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_event():
-    asyncio.create_task(check_active_walks())
+    if not IS_VERCEL:
+        asyncio.create_task(check_active_walks())
 
 
 # ── Request Models ─────────────────────────────────────────────────────────────
@@ -126,9 +134,26 @@ def root():
         "docs": "/docs",
     }
 
+@app.get("/api/")
+def api_root():
+    return {
+        "status": "PathRak API running",
+        "version": "1.0.0",
+        "docs": "/api/docs",
+    }
+
+@app.get("/api/health")
 @app.get("/health")
 def health():
     return {"status": "ok", "timestamp": datetime.now().isoformat(), **data_metadata()}
+
+@app.get("/api/openapi.json", include_in_schema=False)
+def api_openapi():
+    return app.openapi()
+
+@app.get("/api/docs", include_in_schema=False)
+def api_docs():
+    return get_swagger_ui_html(openapi_url="/api/openapi.json", title=f"{app.title} - Swagger UI")
 
 @app.get("/api/config")
 def api_config():
@@ -453,10 +478,9 @@ def nearest_station(lat: float, lng: float):
 @app.post("/api/pins/report")
 def report_danger_pin(req: DangerPinRequest, claims: dict = Depends(require_clerk_user)):
     import json
-    pins_file = os.path.join(os.path.dirname(__file__), "data", "danger_pins.json")
     pins = []
-    if os.path.exists(pins_file):
-        with open(pins_file, "r") as f:
+    if DANGER_PINS_FILE.exists():
+        with DANGER_PINS_FILE.open("r", encoding="utf-8") as f:
             try:
                 pins = json.load(f)
             except json.JSONDecodeError:
@@ -465,16 +489,15 @@ def report_danger_pin(req: DangerPinRequest, claims: dict = Depends(require_cler
     new_pin["reported_by"] = claims["sub"]
     new_pin["timestamp"] = datetime.now().isoformat()
     pins.append(new_pin)
-    with open(pins_file, "w") as f:
+    with DANGER_PINS_FILE.open("w", encoding="utf-8") as f:
         json.dump(pins, f, indent=2)
     return {"status": "success", "pin": new_pin}
 
 @app.get("/api/pins")
 def get_danger_pins():
     import json
-    pins_file = os.path.join(os.path.dirname(__file__), "data", "danger_pins.json")
-    if os.path.exists(pins_file):
-        with open(pins_file, "r") as f:
+    if DANGER_PINS_FILE.exists():
+        with DANGER_PINS_FILE.open("r", encoding="utf-8") as f:
             try:
                 return json.load(f)
             except json.JSONDecodeError:

@@ -7,7 +7,7 @@ from scipy.spatial import cKDTree
 import os
 import threading
 from functools import lru_cache
-from data_config import DATA_DIR, DATA_MODE, data_metadata
+from data_config import DANGER_PINS_FILE, DATA_DIR, DATA_MODE, data_metadata
 
 DATA_PATH = str(DATA_DIR / "incidents.csv")
 MODEL = None
@@ -180,10 +180,9 @@ def generate_heatmap(center_lat: float, center_lng: float, hour: int, day_of_wee
     points = []
     
     import json
-    pins_file = os.path.join(os.path.dirname(__file__), "data", "danger_pins.json")
     danger_pins = []
-    if os.path.exists(pins_file):
-        with open(pins_file, "r") as f:
+    if DANGER_PINS_FILE.exists():
+        with DANGER_PINS_FILE.open("r", encoding="utf-8") as f:
             try:
                 danger_pins = json.load(f)
             except json.JSONDecodeError:

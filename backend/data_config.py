@@ -3,6 +3,7 @@ from pathlib import Path
 
 
 BACKEND_DIR = Path(__file__).resolve().parent
+IS_VERCEL = os.getenv("VERCEL") == "1"
 DATA_MODE = os.getenv("PATHRAK_DATA_MODE", "demo").strip().lower()
 
 if DATA_MODE not in {"demo", "real"}:
@@ -17,6 +18,10 @@ else:
         if configured_dir
         else BACKEND_DIR / "data" / "real"
     )
+
+# Vercel's deployed filesystem is read-only except for ephemeral /tmp storage.
+RUNTIME_DATA_DIR = Path("/tmp") if IS_VERCEL else BACKEND_DIR / "data"
+DANGER_PINS_FILE = RUNTIME_DATA_DIR / "pathrak_danger_pins.json"
 
 
 def data_metadata() -> dict:

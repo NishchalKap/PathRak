@@ -4,7 +4,9 @@ __pycache__/
 .env
 .env.*
 !.env.example
+!.env.local.example
 dist/
 build/
 .DS_Store
 .runlogs/
+.vercel
