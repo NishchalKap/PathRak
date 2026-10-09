@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { Circle, MapContainer, Popup, TileLayer, useMap } from "react-leaflet";
+import { Circle, MapContainer, Popup, useMap } from "react-leaflet";
 import { getNearestHelper, getNearestStation, getSOSLog, triggerSOS } from "../api";
 import Icon from "../components/Icon";
 import { LocationStatus, Notice, PageHeader, StatusPill } from "../components/UI";
+import MapTiles from "../components/MapTiles";
+import MapLayoutResizer from "../components/MapLayoutResizer";
 import "leaflet/dist/leaflet.css";
 
 const MAP_PLACEHOLDER = [20, 0];
@@ -106,7 +108,7 @@ export default function SOSPage({ userInfo, onEditProfile, currentPos, locationE
         </div>
 
         <aside className="sos-secondary">
-          <div className="map-frame sos-map"><MapContainer center={currentPos || MAP_PLACEHOLDER} zoom={15} style={{ height: "100%", width: "100%" }}><TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" attribution="&copy; OpenStreetMap &copy; CARTO" />{currentPos && <RecenterMap position={currentPos} />}{currentPos && <Circle center={currentPos} radius={100} pathOptions={{ color: "#c9363e", fillColor: "#c9363e", fillOpacity: .2 }}><Popup><strong>Your live location</strong><br />{currentPos[0].toFixed(5)}, {currentPos[1].toFixed(5)}</Popup></Circle>}{stations.map((item, index) => item.lat == null || item.lng == null ? null : <Circle key={item.id || index} center={[item.lat, item.lng]} radius={75} pathOptions={{ color: item.id === station?.id ? "#246b91" : "#74b5d7", fillOpacity: item.id === station?.id ? .45 : .18 }}><Popup><strong>{item.name}</strong><br />Reference only · {item.distance_km} km</Popup></Circle>)}</MapContainer>{!currentPos && <div className="map-unavailable"><Icon name="location" size={28} /><strong>Map waiting for location</strong><p>No fallback coordinates are displayed.</p></div>}</div>
+          <div className="map-frame sos-map"><MapContainer center={currentPos || MAP_PLACEHOLDER} zoom={15} style={{ height: "100%", width: "100%" }}><MapTiles onError={setError} /><MapLayoutResizer />{currentPos && <RecenterMap position={currentPos} />}{currentPos && <Circle center={currentPos} radius={100} pathOptions={{ color: "#c9363e", fillColor: "#c9363e", fillOpacity: .2 }}><Popup><strong>Your live location</strong><br />{currentPos[0].toFixed(5)}, {currentPos[1].toFixed(5)}</Popup></Circle>}{stations.map((item, index) => item.lat == null || item.lng == null ? null : <Circle key={item.id || index} center={[item.lat, item.lng]} radius={75} pathOptions={{ color: item.id === station?.id ? "#246b91" : "#74b5d7", fillOpacity: item.id === station?.id ? .45 : .18 }}><Popup><strong>{item.name}</strong><br />Reference only · {item.distance_km} km</Popup></Circle>)}</MapContainer>{!currentPos && <div className="map-unavailable"><Icon name="location" size={28} /><strong>Map waiting for location</strong><p>No fallback coordinates are displayed.</p></div>}</div>
           {recentAlerts.length > 0 && <section className="panel recent-alerts"><h2>Recent recorded alerts</h2><div>{recentAlerts.slice(-4).reverse().map((alert, index) => <div key={alert.alert_id || index}><span><strong>{alert.alert_id}</strong><small>{alert.user || "PathRak user"}</small></span><StatusPill tone="neutral">{alert.status || "Recorded"}</StatusPill></div>)}</div></section>}
         </aside>
       </div>

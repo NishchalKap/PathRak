@@ -79,7 +79,7 @@ Vercel Functions do not provide a durable application filesystem or a continuous
 - Users, nearby-helper presence, SOS history, and SafeWalk records are in memory and can disappear or differ across instances.
 - The continuous SafeWalk expiry monitor is disabled on Vercel. The existing client-triggered expiry endpoint remains available, but reliable unattended expiry requires a durable datastore and scheduled job.
 - Danger-pin writes use `/tmp` on Vercel. They are temporary, instance-local, and may disappear at any time.
-- Twilio, OSRM/OpenRouteService, Nominatim, Overpass, CARTO, and OpenStreetMap remain external network dependencies. Their availability and rate limits are outside PathRak's control.
+- Twilio, OSRM/OpenRouteService, Nominatim, Overpass, and OpenStreetMap remain external network dependencies. Their availability and rate limits are outside PathRak's control.
 - No police-dispatch integration exists. Twilio provider acceptance is not proof of handset delivery.
 
 ## Dashboard Deployment

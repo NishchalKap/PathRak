@@ -1,10 +1,12 @@
-import { useState, useEffect } from "react";
-import { MapContainer, TileLayer, Polyline, CircleMarker, Popup, useMap } from "react-leaflet";
+import { useState, useEffect, useRef } from "react";
+import { MapContainer, Polyline, CircleMarker, Popup, useMap } from "react-leaflet";
 import { findSafeRoute, searchLocation } from "../api";
 import { getBackendWeekday } from "../utils/safetyLogic";
 import { createRoutePlan, getDistinctRoutes, getRouteRiskLabel } from "../utils/routePlan";
 import Icon from "../components/Icon";
 import { Notice, PageHeader, StatusPill } from "../components/UI";
+import MapTiles from "../components/MapTiles";
+import MapLayoutResizer from "../components/MapLayoutResizer";
 import "leaflet/dist/leaflet.css";
 
 const scoreStyle = (score) => {
@@ -33,6 +35,8 @@ function LocationSearch({ label, value, onChange }) {
   const [results, setResults] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState("");
+  const requestVersion = useRef(0);
 
   useEffect(() => {
     // Sync query if value changes externally
@@ -42,28 +46,36 @@ function LocationSearch({ label, value, onChange }) {
   }, [value, isOpen]);
 
   useEffect(() => {
-    if (!query || query === value?.name) {
+    const normalizedQuery = query.trim();
+    if (normalizedQuery.length < 2 || query === value?.name) {
       setResults([]);
+      setSearchError("");
       return;
     }
+    const version = ++requestVersion.current;
     const timer = setTimeout(async () => {
       setLoading(true);
+      setSearchError("");
       try {
-        const data = await searchLocation(query);
+        const data = await searchLocation(normalizedQuery);
+        if (!Array.isArray(data)) throw new Error("Place search returned an invalid response.");
         const mapped = data.map(item => {
           const parts = item.display_name.split(",");
           const name = parts.slice(0, 2).join(",").trim();
           return { name, lat: parseFloat(item.lat), lng: parseFloat(item.lon) };
-        });
+        }).filter(item => item.name && Number.isFinite(item.lat) && Number.isFinite(item.lng));
+        if (version !== requestVersion.current) return;
         setResults(mapped);
         setIsOpen(true);
       } catch (e) {
-        console.error(e);
+        if (version !== requestVersion.current) return;
+        setResults([]);
+        setSearchError(e.message || "Place search is unavailable.");
       } finally {
-        setLoading(false);
+        if (version === requestVersion.current) setLoading(false);
       }
     }, 600);
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); requestVersion.current += 1; };
   }, [query]);
 
   return (
@@ -79,6 +91,8 @@ function LocationSearch({ label, value, onChange }) {
         className="input"
       />
       {loading && <span className="search-loading">Searching...</span>}
+      {searchError && <small className="search-error">{searchError}</small>}
+      {isOpen && !loading && !searchError && query.trim().length >= 2 && results.length === 0 && <small className="search-error">No matching places found.</small>}
       
       {isOpen && results.length > 0 && (
         <div className="search-results">
@@ -112,6 +126,8 @@ export default function RoutePage({ currentPos, theme, onStartSafeWalk, appConfi
   const [startEdited, setStartEdited] = useState(false);
   const [dataMode, setDataMode] = useState(null);
   const [routingProvider, setRoutingProvider] = useState(null);
+  const [objective, setObjective] = useState("risk");
+  const [tileError, setTileError] = useState("");
 
   useEffect(() => {
     if (!currentPos || startEdited) return;
@@ -138,7 +154,8 @@ export default function RoutePage({ currentPos, theme, onStartSafeWalk, appConfi
       const data = await findSafeRoute(
         [{ lat: start.lat, lng: start.lng }, { lat: end.lat, lng: end.lng }],
         hour,
-        getBackendWeekday()
+        getBackendWeekday(),
+        objective,
       );
       if (data.routes?.length === 0) throw new Error("No routes found");
 
@@ -208,20 +225,20 @@ export default function RoutePage({ currentPos, theme, onStartSafeWalk, appConfi
       <section className="panel route-planner">
         <div className="route-fields"><LocationSearch label="Start location" value={start} onChange={(value) => { setStartEdited(true); setStart(value); }} /><span className="route-connector" /><LocationSearch label="Destination" value={end} onChange={setEnd} /></div>
         <div className="departure-field"><div><label htmlFor="departure-hour">Departure hour</label><strong>{String(hour).padStart(2, "0")}:00</strong></div><input id="departure-hour" type="range" min="0" max="23" value={hour} onChange={(event) => setHour(Number(event.target.value))} /><small>Current time {currentTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small></div>
+        <div className="field route-objective"><label htmlFor="route-objective">Optimize for</label><select id="route-objective" className="input" value={objective} onChange={event => setObjective(event.target.value)}><option value="risk">Lowest observed risk</option><option value="distance">Shortest distance</option><option value="time">Fastest ETA</option><option value="cost">Lowest planning cost</option></select></div>
         <div className="journey-controls"><button className="btn btn-primary route-submit" onClick={handleFind} disabled={loading || !start || !end}><Icon name="route" />{loading ? "Calculating real routes..." : "Find safer routes"}</button>{appConfig?.demo_mode && <button className="btn btn-secondary" onClick={() => { setStartEdited(true); setStart(appConfig.demo.start); setEnd(appConfig.demo.destination); setRoutes([]); setError(""); }}>Load Bengaluru demo route</button>}</div>
       </section>
 
       {error && <Notice tone="warning" title="Route service unavailable" action={<button className="btn btn-secondary" onClick={handleFind} disabled={loading}>Try again</button>}>{error} No route has been fabricated.</Notice>}
+      {tileError && <Notice tone="warning" title="Map tiles unavailable" action={<button className="btn btn-secondary" onClick={() => { setTileError(""); window.location.reload(); }}>Reload map</button>}>{tileError}</Notice>}
       {dataMode === "DEMO" && <Notice tone="warning" title="Demonstration risk data">Route geometry is real when returned by the provider, but safety scores use synthetic incidents and are not real-world safety guidance.</Notice>}
       {routingProvider === "OSRM_DEMO" && <Notice tone="info" title="Public demo routing">This is a real road route from the public OSRM demo server using a driving-road profile. It is not pedestrian navigation, and alternatives are not guaranteed.</Notice>}
 
       <div className={`route-workspace ${routes.length ? "has-routes" : ""}`}>
         <div className="map-frame route-map">
           <MapContainer center={start ? [start.lat, start.lng] : end ? [end.lat, end.lng] : [20, 0]} zoom={13} style={{ height: "100%", width: "100%" }}>
-          <TileLayer
-            url={theme === "dark" ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"}
-            attribution="&copy; OpenStreetMap &copy; CARTO"
-          />
+          <MapTiles onError={setTileError} />
+          <MapLayoutResizer />
           {routes.length > 0 && <FitBounds routes={routes} />}
           {routes.map((route, i) => {
             if (selectedRoute === i) return null;
@@ -241,7 +258,7 @@ export default function RoutePage({ currentPos, theme, onStartSafeWalk, appConfi
 
         <aside className="route-results">
           {!routes.length ? <div className="panel route-empty"><span><Icon name="route" size={26} /></span><h2>No route calculated yet</h2><p>Choose a destination to compare available road routes, travel time, distance, and risk score.</p></div> : <>
-            <div className="route-result-heading"><p className="eyebrow">PathRak safe routes</p><h2>Compare and select</h2><p>{routes.length === 1 ? "The routing provider returned one distinct road route for this journey." : `${routes.length} distinct road routes were returned and scored independently.`}</p></div>
+            <div className="route-result-heading"><p className="eyebrow">PathRak route ranking</p><h2>Compare and select</h2><p>{routes.length === 1 ? "The routing provider returned one distinct road route for this journey." : `${routes.length} distinct road routes were returned and ranked with PathRak Merge Sort.`}</p></div>
             <div className="route-options">{routes.map((route, index) => {
               const selected = selectedRoute === index;
               const style = scoreStyle(route.score);
@@ -250,7 +267,7 @@ export default function RoutePage({ currentPos, theme, onStartSafeWalk, appConfi
               const reasons = getRouteReasons(route);
               return <article key={route.route_index ?? index} className={`route-option tone-${style.tone} ${selected ? "is-selected" : ""}`} onClick={() => setSelectedRoute(index)}>
                 <span className="route-option-top"><span><small>{route.is_safest ? "Recommended" : "Available route"}</small><strong>{title}</strong></span>{selected && <span className="selected-badge"><Icon name="check" size={13} />Selected</span>}</span>
-                <dl className="route-option-metrics"><div><dt>Route label</dt><dd>{route.label}</dd></div><div><dt>Safety score</dt><dd>{route.score} / 100</dd></div><div><dt>Risk</dt><dd>{getRouteRiskLabel(route.avg_risk)}</dd></div><div><dt>Average risk</dt><dd>{route.avg_risk} / 5</dd></div><div><dt>Distance</dt><dd>{(route.distance_m / 1000).toFixed(1)} km</dd></div><div><dt>ETA</dt><dd>{Math.max(1, Math.round(route.duration_s / 60))} min</dd></div><div className="route-provider"><dt>Provider</dt><dd>{routingProvider === "OSRM_DEMO" ? "OSRM" : "OpenRouteService"}</dd></div></dl>
+                <dl className="route-option-metrics"><div><dt>Route label</dt><dd>{route.label}</dd></div><div><dt>Safety score</dt><dd>{route.score} / 100</dd></div><div><dt>Risk</dt><dd>{getRouteRiskLabel(route.avg_risk)}</dd></div><div><dt>Average risk</dt><dd>{route.avg_risk} / 5</dd></div><div><dt>Distance</dt><dd>{(route.distance_m / 1000).toFixed(1)} km</dd></div><div><dt>ETA</dt><dd>{Math.max(1, Math.round(route.duration_s / 60))} min</dd></div><div><dt>Planning cost</dt><dd>₹{route.cost_estimate_inr?.toFixed(0) ?? "—"}</dd></div><div className="route-provider"><dt>Provider</dt><dd>{routingProvider === "OSRM_DEMO" ? "OSRM" : "OpenRouteService"}</dd></div></dl>
                 {reasons.length > 0 && <span className="route-tradeoffs">{reasons.map(reason => <small key={reason}><Icon name={reason.includes("Higher") || reason.includes("Longer") ? "warning" : "check"} size={13} />{reason}</small>)}</span>}
                 <button type="button" aria-pressed={selected} className={`route-select-action ${selected ? "is-selected" : ""}`} onClick={() => setSelectedRoute(index)}>{selected ? "Selected route" : "Select route"}</button>
               </article>;

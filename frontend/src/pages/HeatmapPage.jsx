@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
-  MapContainer, TileLayer,
+  MapContainer,
   Circle, Popup,
   useMapEvents, CircleMarker, Rectangle, useMap,
 } from "react-leaflet";
@@ -12,6 +12,8 @@ import {
 import "leaflet/dist/leaflet.css";
 import { getBackendWeekday } from "../utils/safetyLogic";
 import { Notice, PageHeader, StatusPill } from "../components/UI";
+import MapTiles from "../components/MapTiles";
+import MapLayoutResizer from "../components/MapLayoutResizer";
 
 const RISK_COLORS = {
   1: "#2563eb",
@@ -419,11 +421,8 @@ export default function HeatmapPage({ userInfo, currentPos, locationError, theme
           style={{ height: "420px", width: "100%" }}
         >
           <RecenterMap center={currentPos} />
-          <TileLayer
-            url={theme === "dark" ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png" : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"}
-            attribution='&copy; OpenStreetMap &copy; CartoDB'
-            opacity={0.82}
-          />
+          <MapTiles onError={(message) => setError(message)} />
+          <MapLayoutResizer />
 
           {/* Grey base for the available data area before risk colors load */}
           {currentPos && <Rectangle

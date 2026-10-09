@@ -12,6 +12,9 @@ import SmartCheckPage from "./pages/SmartCheckPage";
 import FakeCallPage from "./pages/FakeCallPage";
 import SafeMonitoringPage from "./pages/SafeMonitoringPage";
 import LoginPage from "./pages/LoginPage";
+import NetworkDesignerPage from "./pages/NetworkDesignerPage";
+import ResourceOptimizerPage from "./pages/ResourceOptimizerPage";
+import AlgorithmAnalyzerPage from "./pages/AlgorithmAnalyzerPage";
 import { getAppConfig, registerUser, setAuthTokenProvider } from "./api";
 import { useSafetyMonitor } from "./hooks/useSafetyMonitor";
 
@@ -28,6 +31,9 @@ const SECONDARY_NAV = [
   { id: "heatmap", label: "Safety Map", icon: "map" },
   { id: "lighting", label: "Street Lighting", icon: "light" },
   { id: "fakecall", label: "Exit Call", icon: "phone" },
+  { id: "network", label: "Network Design", icon: "network" },
+  { id: "resources", label: "Budget Optimizer", icon: "budget" },
+  { id: "analyzer", label: "Algorithm Analyzer", icon: "chart" },
   { id: "profile", label: "Safety Profile", icon: "profile" },
 ];
 
@@ -41,6 +47,9 @@ const PAGE_COMPONENTS = {
   heatmap: HeatmapPage,
   lighting: LightingPage,
   fakecall: FakeCallPage,
+  network: NetworkDesignerPage,
+  resources: ResourceOptimizerPage,
+  analyzer: AlgorithmAnalyzerPage,
   profile: StartPage,
 };
 
@@ -107,6 +116,10 @@ export default function App() {
     }
     if (!navigator.geolocation) {
       setLocationError("This browser does not support location services.");
+      return undefined;
+    }
+    if (!window.isSecureContext) {
+      setLocationError("Location requires HTTPS or localhost. You can still enter route locations manually.");
       return undefined;
     }
 

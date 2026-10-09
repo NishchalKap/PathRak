@@ -33,7 +33,7 @@ def capability_config() -> dict:
         "demo_mode": DEMO_MODE,
         "demo": DEMO_SCENARIO if DEMO_MODE else None,
         "services": {
-            "map_tiles": {"provider": "CARTO/OpenStreetMap", "state": "EXTERNAL_SERVICE"},
+            "map_tiles": {"provider": "OpenStreetMap Standard", "state": "EXTERNAL_SERVICE", "development_only": True},
             "routing": {
                 "provider": "OpenRouteService" if ROUTING_PROVIDER == "ors" else "OSRM public demo server",
                 "profile": "driving-car",

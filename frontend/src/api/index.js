@@ -74,8 +74,8 @@ export const getSOSLog = () => api("/api/sos/log");
 
 export const getNearestStation = (lat, lng) =>
   api(`/api/sos/nearest-station?lat=${lat}&lng=${lng}`);
-export const findSafeRoute = (waypoints, hour, day_of_week) =>
-  api("/api/route/find-safe", "POST", { waypoints, hour, day_of_week });
+export const findSafeRoute = (waypoints, hour, day_of_week, optimization_objective = "risk") =>
+  api("/api/route/find-safe", "POST", { waypoints, hour, day_of_week, optimization_objective });
 
 export const reportDangerPin = (lat, lng, type, description) =>
   api("/api/pins/report", "POST", { lat, lng, type, description });
@@ -98,3 +98,11 @@ export const getSafeSpots = (lat, lng, radius = 2000) =>
 export const getIncidentHistory = () => api("/api/incidents/history");
 
 export const searchLocation = (query) => api(`/api/geocode?q=${encodeURIComponent(query)}`);
+
+export const runDijkstra = (graph) => api("/api/algorithms/dijkstra", "POST", graph);
+export const runBfs = (graph) => api("/api/algorithms/bfs", "POST", graph);
+export const runDfs = (graph) => api("/api/algorithms/dfs", "POST", graph);
+export const runMst = (algorithm, graph) => api(`/api/network/${algorithm}`, "POST", graph);
+export const optimizeResources = (payload) => api("/api/resources/optimize", "POST", payload);
+export const runBenchmark = (payload) => api("/api/algorithms/benchmark", "POST", payload);
+export const generateSyntheticGraph = (payload) => api("/api/algorithms/synthetic-graph", "POST", payload);

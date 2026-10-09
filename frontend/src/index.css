@@ -466,6 +466,19 @@ textarea.input { min-height: 110px; padding-top: 12px; resize: vertical; }
 .time-control input { width: 100%; accent-color: var(--brand); }
 .time-control small { color: var(--ink-faint); font-size: 9px; }
 .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.algorithm-page { max-width: 1180px; }
+.algorithm-controls { display: grid; grid-template-columns: minmax(180px, 1fr) auto; align-items: end; gap: 14px; padding: 18px; }
+.algorithm-controls .field { display: grid; gap: 6px; }
+.algorithm-controls label { color: var(--ink-soft); font-size: 11px; font-weight: 700; }
+.analyzer-controls { grid-template-columns: repeat(4, minmax(110px, 1fr)) auto; }
+.data-panel { display: grid; gap: 13px; padding: 18px; }
+.data-panel h2 { margin: 0; font-size: 16px; }
+.data-panel p { margin: 0; color: var(--ink-soft); font-size: 12px; line-height: 1.55; }
+.data-panel pre { overflow: auto; margin: 0; padding: 12px; border-radius: 10px; background: var(--surface-raised); color: var(--ink-soft); font-size: 11px; }
+.algorithm-results { display: grid; gap: 14px; }
+.edge-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }
+.edge-list span { display: flex; min-width: 0; justify-content: space-between; gap: 8px; padding: 10px; border-radius: 10px; background: var(--surface-raised); color: var(--ink-soft); font-size: 11px; }
+.edge-list b { color: var(--ink); font-family: "IBM Plex Mono", monospace; font-size: 10px; white-space: nowrap; }
 .metric-safe > strong { color: var(--safe); }
 .metric-danger > strong { color: var(--danger); }
 .map-legend { display: flex; flex-wrap: wrap; gap: 14px; }
@@ -688,6 +701,7 @@ textarea.input { min-height: 110px; padding-top: 12px; resize: vertical; }
   .map-toolbar { grid-template-columns: 1fr; }
   .map-toolbar .btn { width: 100%; }
   .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .analyzer-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .lighting-map { min-height: 430px; }
   .data-disclosure { align-items: flex-start; flex-direction: column; }
   .exit-call-layout { grid-template-columns: 1fr; }
@@ -741,6 +755,9 @@ textarea.input { min-height: 110px; padding-top: 12px; resize: vertical; }
   .companion-responses { grid-template-columns: 1fr; }
   .companion-responses .open-sos { grid-column: auto; }
   .route-planner, .route-analysis, .journey-form, .active-journey, .journey-complete, .emergency-mode { padding: 15px; }
+  .algorithm-controls, .data-panel { padding: 15px; }
+  .algorithm-controls { grid-template-columns: 1fr; }
+  .analyzer-controls { grid-template-columns: 1fr; }
   .route-option { padding: 13px; }
   .route-analysis-heading { flex-direction: column; }
   .route-analysis-metrics, .safewalk-route-summary, .active-journey-summary { grid-template-columns: 1fr; }

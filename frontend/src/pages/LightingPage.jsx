@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { MapContainer, Polyline, Popup, TileLayer, useMap } from "react-leaflet";
+import { MapContainer, Polyline, Popup, useMap } from "react-leaflet";
 import { getLightingMap, getLightingSavings } from "../api";
 import Icon from "../components/Icon";
+import MapTiles from "../components/MapTiles";
+import MapLayoutResizer from "../components/MapLayoutResizer";
 import { Metric, Notice, PageHeader, StatusPill } from "../components/UI";
 import "leaflet/dist/leaflet.css";
 
@@ -73,7 +75,7 @@ export default function LightingPage({ currentPos, locationError, theme }) {
       {source && <Notice tone="info" title={source.id === "SIMULATED_DEMO_GRID" ? "Demo lighting grid" : "OpenStreetMap geometry"}>{source.note}</Notice>}
       <div className="metric-grid"><Metric label="Working" value={savings?.working_count ?? "—"} tone="safe" /><Metric label="Broken" value={savings?.not_working_count ?? "—"} tone="danger" /><Metric label="No street light" value={savings?.no_light_count ?? "—"} /><Metric label="Zones returned" value={savings?.total_zones ?? "—"} /></div>
       <div className="map-legend" aria-label="Lighting status legend">{Object.entries(STATUS_COLORS).map(([status, color]) => <span key={status}><i style={{ backgroundColor: color }} />{status}</span>)}</div>
-      <div className="map-frame lighting-map"><MapContainer center={currentPos || MAP_PLACEHOLDER} zoom={14} style={{ height: "100%", width: "100%" }}>{currentPos && <RecenterMap center={currentPos} />}<TileLayer url={theme === "dark" ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"} attribution="&copy; OpenStreetMap &copy; CARTO" />{segments.map((segment) => <Polyline key={segment.id} positions={segment.positions} pathOptions={{ color: STATUS_COLORS[segment.status], opacity: segment.status === "No Street Light" ? .72 : .92, weight: segment.status === "No Street Light" ? 5 : 7, lineCap: "round" }}><Popup><strong>{segment.name}</strong><br />Status: {segment.status}<br />Brightness: {segment.brightness}%<br />Traffic: {segment.density}%<br /><small>{segment.mode}</small></Popup></Polyline>)}</MapContainer>{!currentPos && <div className="map-unavailable"><Icon name="location" size={28} /><strong>Location required</strong><p>PathRak does not display placeholder lighting data.</p></div>}</div>
+      <div className="map-frame lighting-map"><MapContainer center={currentPos || MAP_PLACEHOLDER} zoom={14} style={{ height: "100%", width: "100%" }}>{currentPos && <RecenterMap center={currentPos} />}<MapTiles onError={setError} /><MapLayoutResizer />{segments.map((segment) => <Polyline key={segment.id} positions={segment.positions} pathOptions={{ color: STATUS_COLORS[segment.status], opacity: segment.status === "No Street Light" ? .72 : .92, weight: segment.status === "No Street Light" ? 5 : 7, lineCap: "round" }}><Popup><strong>{segment.name}</strong><br />Status: {segment.status}<br />Brightness: {segment.brightness}%<br />Traffic: {segment.density}%<br /><small>{segment.mode}</small></Popup></Polyline>)}</MapContainer>{!currentPos && <div className="map-unavailable"><Icon name="location" size={28} /><strong>Location required</strong><p>PathRak does not display placeholder lighting data.</p></div>}</div>
       {savings?.status_breakdown && <section className="panel data-disclosure"><div><h2>Simulated scenario summary</h2><p>{savings.method || "These counts are modeled demo values, not measured municipal infrastructure status."}</p></div><div>{Object.entries(savings.status_breakdown).map(([status, count]) => <span key={status}><i style={{ backgroundColor: STATUS_COLORS[status] }} />{status}: <strong>{count}</strong></span>)}</div></section>}
     </div>
   );

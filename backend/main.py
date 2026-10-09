@@ -1,8 +1,8 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, validator
-from typing import List, Optional
+from typing import Any, List, Optional
 from datetime import datetime
 import os
 from dotenv import load_dotenv
@@ -13,6 +13,10 @@ load_dotenv(dotenv_path=env_path)
 from data_config import DANGER_PINS_FILE, DATA_DIR, IS_VERCEL, data_metadata
 from auth import require_clerk_user
 from demo_config import DEMO_MODE, OSRM_BASE_URL, ROUTING_PROVIDER, capability_config
+from algorithm_engine import (
+    benchmark, bfs, binary_search, dfs, dijkstra, kruskal, optimize_projects,
+    prim, sort_routes, synthetic_graph, merge_sort,
+)
 
 from model import (
     generate_heatmap,
@@ -93,6 +97,13 @@ class RouteRequest(BaseModel):
     waypoints: List[Waypoint] = Field(..., min_items=2)  # FIX: Require at least 2 waypoints
     hour: Optional[int] = Field(None, ge=0, le=23)
     day_of_week: Optional[int] = Field(None, ge=0, le=6)
+    optimization_objective: str = "risk"
+
+    @validator("optimization_objective")
+    def validate_optimization_objective(cls, value):
+        if value not in {"distance", "time", "cost", "risk"}:
+            raise ValueError("optimization_objective must be distance, time, cost, or risk")
+        return value
 
 class LightingRequest(BaseModel):
     lat: float = Field(..., ge=-90, le=90)
@@ -122,6 +133,73 @@ class DangerPinRequest(BaseModel):
     lng: float = Field(..., ge=-180, le=180)
     type: str
     description: Optional[str] = ""
+
+
+class GraphEdgeRequest(BaseModel):
+    source: str
+    target: str
+    weight: float = Field(1, ge=0)
+    distance: Optional[float] = Field(None, ge=0)
+    time: Optional[float] = Field(None, ge=0)
+    cost: Optional[float] = Field(None, ge=0)
+    risk: Optional[float] = Field(None, ge=0)
+
+    def model_dump(self, *args, **kwargs):
+        value = super().model_dump(*args, **kwargs)
+        # The engine uses a common weight when a criterion was not supplied.
+        return {key: item for key, item in value.items() if item is not None}
+
+
+class GraphRequest(BaseModel):
+    nodes: List[str] = Field(default_factory=list, max_length=500)
+    edges: List[GraphEdgeRequest] = Field(default_factory=list, max_length=10000)
+    directed: bool = False
+
+
+class TraversalRequest(GraphRequest):
+    start: str
+    target: Optional[str] = None
+    criterion: str = "distance"
+
+
+class MstRequest(GraphRequest):
+    criterion: str = "cost"
+
+
+class RouteSortRequest(BaseModel):
+    routes: List[dict] = Field(default_factory=list, max_length=1000)
+    key: str = "distance"
+    algorithm: str = "merge"
+
+
+class SearchRequest(BaseModel):
+    items: List[dict] = Field(default_factory=list, max_length=10000)
+    key: str
+    value: Any
+
+
+class ProjectRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    cost: int = Field(ge=0, le=100000)
+    benefit: int = Field(ge=0, le=100000)
+    category: Optional[str] = None
+
+
+class ResourceRequest(BaseModel):
+    projects: List[ProjectRequest] = Field(default_factory=list, max_length=80)
+    budget: int = Field(ge=0, le=100000)
+    method: str = "dp"
+
+
+class SyntheticGraphRequest(BaseModel):
+    size: int = Field(12, ge=1, le=500)
+    density: float = Field(.3, ge=0, le=1)
+    seed: int = 42
+
+
+class BenchmarkRequest(SyntheticGraphRequest):
+    algorithm: str = "dijkstra"
+    trials: int = Field(5, ge=1, le=50)
 
 
 # ── Health ─────────────────────────────────────────────────────────────────────
@@ -158,6 +236,107 @@ def api_docs():
 @app.get("/api/config")
 def api_config():
     return capability_config()
+
+
+# ── PathRak DAA engine ───────────────────────────────────────────────────────
+# These endpoints intentionally execute PathRak's own algorithms over explicit
+# graphs. Routing providers remain a separate source of road geometry.
+
+def _graph_payload(req: GraphRequest) -> tuple[list[str], list[dict], bool]:
+    return req.nodes, [edge.model_dump() for edge in req.edges], req.directed
+
+
+def _algorithm_error(exc: ValueError):
+    raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/algorithms/bfs")
+def algorithm_bfs(req: TraversalRequest):
+    try:
+        nodes, edges, directed = _graph_payload(req)
+        return bfs(nodes, edges, req.start, req.target, directed)
+    except ValueError as exc:
+        _algorithm_error(exc)
+
+
+@app.post("/api/algorithms/dfs")
+def algorithm_dfs(req: TraversalRequest):
+    try:
+        nodes, edges, directed = _graph_payload(req)
+        return dfs(nodes, edges, req.start, directed)
+    except ValueError as exc:
+        _algorithm_error(exc)
+
+
+@app.post("/api/algorithms/dijkstra")
+def algorithm_dijkstra(req: TraversalRequest):
+    try:
+        nodes, edges, directed = _graph_payload(req)
+        if req.target is None:
+            raise ValueError("Dijkstra requires a target vertex.")
+        return dijkstra(nodes, edges, req.start, req.target, req.criterion, directed)
+    except ValueError as exc:
+        _algorithm_error(exc)
+
+
+@app.post("/api/network/prim")
+def network_prim(req: MstRequest):
+    try:
+        nodes, edges, _ = _graph_payload(req)
+        return prim(nodes, edges, req.criterion)
+    except ValueError as exc:
+        _algorithm_error(exc)
+
+
+@app.post("/api/network/kruskal")
+def network_kruskal(req: MstRequest):
+    try:
+        nodes, edges, _ = _graph_payload(req)
+        return kruskal(nodes, edges, req.criterion)
+    except ValueError as exc:
+        _algorithm_error(exc)
+
+
+@app.post("/api/algorithms/synthetic-graph")
+def algorithm_synthetic_graph(req: SyntheticGraphRequest):
+    try:
+        return synthetic_graph(req.size, req.density, req.seed)
+    except ValueError as exc:
+        _algorithm_error(exc)
+
+
+@app.post("/api/algorithms/sort-routes")
+def algorithm_sort_routes(req: RouteSortRequest):
+    try:
+        return sort_routes(req.routes, req.key, req.algorithm)
+    except ValueError as exc:
+        _algorithm_error(exc)
+
+
+@app.post("/api/algorithms/binary-search")
+def algorithm_binary_search(req: SearchRequest):
+    try:
+        if any(req.key not in item for item in req.items):
+            raise ValueError(f"Every item must contain '{req.key}'.")
+        return {"index": binary_search(req.items, req.key, req.value), "found": binary_search(req.items, req.key, req.value) >= 0}
+    except (TypeError, ValueError) as exc:
+        _algorithm_error(ValueError(str(exc)))
+
+
+@app.post("/api/resources/optimize")
+def resource_optimize(req: ResourceRequest):
+    try:
+        return optimize_projects([project.model_dump() for project in req.projects], req.budget, req.method)
+    except ValueError as exc:
+        _algorithm_error(exc)
+
+
+@app.post("/api/algorithms/benchmark")
+def algorithm_benchmark(req: BenchmarkRequest):
+    try:
+        return benchmark(req.algorithm, req.size, req.density, req.trials, req.seed)
+    except ValueError as exc:
+        _algorithm_error(exc)
 
 # ── Heatmap & Risk ─────────────────────────────────────────────────────────────
 
@@ -197,18 +376,31 @@ def hotspots():
     return {"clusters": clusters, "total": len(clusters), **data_metadata()}
 
 @app.get("/api/geocode")
-def geocode(q: str):
+def geocode(q: str = Query(..., min_length=2, max_length=200)):
     import requests as req_lib
+    normalized_query = q.strip()
+    if len(normalized_query) < 2:
+        raise HTTPException(status_code=422, detail="Place search query must contain at least two non-space characters.")
     try:
         res = req_lib.get(
-            f"https://nominatim.openstreetmap.org/search?q={q}&format=json&limit=5",
+            "https://nominatim.openstreetmap.org/search",
+            params={"q": normalized_query, "format": "jsonv2", "limit": 5, "addressdetails": 1},
             headers={"User-Agent": "PathRak/1.0 (https://github.com/NishchalKap/PathRak)"},
-            timeout=5
+            timeout=8,
         )
         res.raise_for_status()
-        return res.json()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        payload = res.json()
+        if not isinstance(payload, list):
+            raise HTTPException(status_code=502, detail="Geocoding provider returned an unexpected response.")
+        return payload
+    except HTTPException:
+        raise
+    except req_lib.exceptions.Timeout as exc:
+        raise HTTPException(status_code=504, detail="Place search timed out. Please try again.") from exc
+    except req_lib.exceptions.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="Place search provider rejected the request.") from exc
+    except (ValueError, req_lib.exceptions.RequestException) as exc:
+        raise HTTPException(status_code=502, detail="Place search provider is unavailable.") from exc
 
 # ── Route Scoring ──────────────────────────────────────────────────────────────
 
@@ -294,6 +486,8 @@ def find_safe_route(req: RouteRequest):
     scored_routes = []
     for i, feature in enumerate(features):
         coords = feature["geometry"]["coordinates"]
+        if not isinstance(coords, list) or len(coords) < 2:
+            continue
         step = max(1, len(coords) // 50)
         waypoints = [{"lat": c[1], "lng": c[0]} for c in coords[::step]][:50]
         try:
@@ -301,6 +495,24 @@ def find_safe_route(req: RouteRequest):
         except (FileNotFoundError, ValueError) as e:
             raise HTTPException(status_code=503, detail=str(e))
         summary = feature["properties"]["summary"]
+        # A route API does not expose its complete road network. Build an
+        # inspectable, bounded graph from the legally returned route geometry
+        # so Dijkstra can be demonstrated without claiming city-wide optimality.
+        graph_coords = coords[::max(1, len(coords) // 120)]
+        if graph_coords[-1] != coords[-1]:
+            graph_coords.append(coords[-1])
+        graph_nodes = [f"route_{i}_{index}" for index in range(len(graph_coords))]
+        segment_count = max(1, len(graph_nodes) - 1)
+        graph_edges = [
+            {
+                "source": graph_nodes[index], "target": graph_nodes[index + 1],
+                "distance": summary["distance"] / segment_count,
+                "time": summary["duration"] / segment_count,
+                "cost": (summary["distance"] / 1000 * 20) / segment_count,
+                "risk": score_result["avg_risk"],
+            }
+            for index in range(segment_count)
+        ]
         scored_routes.append({
             "route_index": i,
             "coordinates": [[c[1], c[0]] for c in coords],
@@ -309,10 +521,31 @@ def find_safe_route(req: RouteRequest):
             "avg_risk": score_result["avg_risk"],
             "distance_m": summary["distance"],
             "duration_s": summary["duration"],
+            # This is a transparent planning estimate, not provider fare data.
+            "cost_estimate_inr": round((summary["distance"] / 1000) * 20, 2),
+            "cost_estimate_note": "Rule-based planning estimate at ₹20/km; not a provider fare.",
+            "bounded_algorithm_graph": {
+                "nodes": graph_nodes,
+                "edges": graph_edges,
+                "coordinates": [[point[1], point[0]] for point in graph_coords],
+                "scope": "A bounded graph extracted from this returned candidate route, not a complete road network.",
+            },
             "is_safest": False,
         })
 
-    scored_routes.sort(key=lambda x: x["score"], reverse=True)
+    objective_key = {
+        "distance": "distance_m",
+        "time": "duration_s",
+        "cost": "cost_estimate_inr",
+        "risk": "avg_risk",
+    }[req.optimization_objective]
+    # PathRak's stable Merge Sort ranks route candidates. The routing service
+    # supplied geometry only; it did not perform this local route ranking.
+    for route in scored_routes:
+        route["route_rank"] = route[objective_key]
+    scored_routes = merge_sort(scored_routes, "route_rank")
+    for route in scored_routes:
+        route.pop("route_rank", None)
     if scored_routes:
         scored_routes[0]["is_safest"] = True
 
@@ -321,6 +554,9 @@ def find_safe_route(req: RouteRequest):
         "total": len(scored_routes),
         "routing_provider": "OPENROUTESERVICE" if ROUTING_PROVIDER == "ors" else "OSRM_DEMO",
         "routing_profile": "driving-car",
+        "optimization_objective": req.optimization_objective,
+        "route_ranking_algorithm": "PathRak Merge Sort",
+        "real_map_graph_note": "Each route includes a bounded graph made from returned provider geometry. Any Dijkstra result is optimal only within that candidate graph, not globally across the city road network.",
         "route_alternatives_note": "The provider may return fewer alternatives when no sufficiently distinct route exists.",
         **data_metadata(),
     }
