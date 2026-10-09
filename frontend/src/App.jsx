@@ -74,7 +74,14 @@ export default function App() {
 
   useEffect(() => {
     setAuthTokenProvider(() => getToken());
-    getAppConfig().then(setAppConfig).catch(() => setAppConfig(null));
+    getAppConfig()
+      .then((cfg) => {
+        setAppConfig(cfg);
+        if (cfg?.demo_mode && !livePos) {
+          setLocationMode("demo");
+        }
+      })
+      .catch(() => setAppConfig(null));
     return () => setAuthTokenProvider(null);
   }, [getToken]);
 
@@ -238,7 +245,27 @@ export default function App() {
         {appConfig?.demo_mode && <div className="demo-environment" role="status"><span><strong>Demo environment</strong><small>{locationMode === "demo" ? `Simulated · ${appConfig.demo.city}` : "Live GPS remains active"}</small></span><button className="text-button" onClick={() => setLocationMode(locationMode === "demo" ? "live" : "demo")}>{locationMode === "demo" ? "Use live GPS" : `Use ${appConfig.demo.city} demo location`}</button></div>}
         <header className="top-bar">
           <button className="icon-button mobile-only" onClick={() => setMobileMenuOpen(true)} aria-label="Open navigation"><Icon name="menu" /></button>
-          <div className="top-location"><span className={currentPos ? "signal-ready" : "signal-warning"} /><span>{currentPos ? locationMode === "demo" ? "Demo location active" : "Live location active" : "Location unavailable"}</span></div>
+          <div
+            className="top-location"
+            style={{ cursor: appConfig?.demo ? "pointer" : "default" }}
+            onClick={() => {
+              if (appConfig?.demo) {
+                setLocationMode(locationMode === "demo" ? "live" : "demo");
+              }
+            }}
+            title={appConfig?.demo ? `Click to switch between Live GPS and ${appConfig.demo.city} Demo Location` : undefined}
+          >
+            <span className={currentPos ? "signal-ready" : "signal-warning"} />
+            <span>
+              {currentPos
+                ? locationMode === "demo"
+                  ? `Demo location active (${appConfig?.demo?.city || "Bengaluru"})`
+                  : "Live GPS active"
+                : locationError
+                ? `${locationError} · Click for demo`
+                : "Location initializing..."}
+            </span>
+          </div>
           <div className="top-actions">
             <button className="icon-button" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} aria-label={`Use ${theme === "dark" ? "light" : "dark"} theme`}><Icon name={theme === "dark" ? "sun" : "moon"} /></button>
             <UserButton afterSignOutUrl="/" />

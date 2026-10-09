@@ -172,9 +172,15 @@ class RouteSortRequest(BaseModel):
     algorithm: str = "merge"
 
 
+class SortItemsRequest(BaseModel):
+    items: List[Any] = Field(default_factory=list, max_length=10000)
+    key: Optional[str] = None
+    algorithm: str = "merge"
+
+
 class SearchRequest(BaseModel):
-    items: List[dict] = Field(default_factory=list, max_length=10000)
-    key: str
+    items: List[Any] = Field(default_factory=list, max_length=10000)
+    key: Optional[str] = None
     value: Any
 
 
@@ -313,12 +319,33 @@ def algorithm_sort_routes(req: RouteSortRequest):
         _algorithm_error(exc)
 
 
+@app.post("/api/algorithms/sort")
+def algorithm_sort(req: SortItemsRequest):
+    from time import perf_counter
+    from algorithm_engine import quick_sort, heap_sort
+    try:
+        sorter = {"merge": merge_sort, "quick": quick_sort, "heap": heap_sort}.get(req.algorithm)
+        if not sorter:
+            raise ValueError("algorithm must be merge, quick, or heap.")
+        started = perf_counter()
+        sorted_items = sorter(req.items, req.key)
+        return {
+            "algorithm": req.algorithm,
+            "sorted_items": sorted_items,
+            "count": len(sorted_items),
+            "execution_ms": round((perf_counter() - started) * 1000, 4),
+        }
+    except ValueError as exc:
+        _algorithm_error(exc)
+
+
 @app.post("/api/algorithms/binary-search")
 def algorithm_binary_search(req: SearchRequest):
     try:
-        if any(req.key not in item for item in req.items):
+        if req.key and any(isinstance(item, dict) and req.key not in item for item in req.items):
             raise ValueError(f"Every item must contain '{req.key}'.")
-        return {"index": binary_search(req.items, req.key, req.value), "found": binary_search(req.items, req.key, req.value) >= 0}
+        idx = binary_search(req.items, req.key, req.value)
+        return {"index": idx, "found": idx >= 0}
     except (TypeError, ValueError) as exc:
         _algorithm_error(ValueError(str(exc)))
 
@@ -427,14 +454,13 @@ def find_safe_route(req: RouteRequest):
     hour  = req.hour if req.hour is not None else now.hour
     dow   = req.day_of_week if req.day_of_week is not None else now.weekday()
 
+    if abs(start.lat - end.lat) < 1e-5 and abs(start.lng - end.lng) < 1e-5:
+        raise HTTPException(status_code=422, detail="Start and destination must be different locations.")
+
     try:
-        if ROUTING_PROVIDER == "ors":
+        use_ors = ROUTING_PROVIDER == "ors" and bool(os.getenv("ORS_API_KEY"))
+        if use_ors:
             ors_key = os.getenv("ORS_API_KEY", "")
-            if not ors_key:
-                raise HTTPException(
-                    status_code=503,
-                    detail="ORS_API_KEY is not configured; real road-route alternatives are unavailable.",
-                )
             res = req_lib.post(
                 "https://api.openrouteservice.org/v2/directions/driving-car/geojson",
                 headers={"Authorization": ors_key, "Content-Type": "application/json"},
@@ -450,12 +476,13 @@ def find_safe_route(req: RouteRequest):
             )
             res.raise_for_status()
             features = res.json().get("features", [])
-        elif ROUTING_PROVIDER == "osrm_demo" and DEMO_MODE:
+            provider_used = "OPENROUTESERVICE"
+        else:
             coordinates = f"{start.lng},{start.lat};{end.lng},{end.lat}"
             res = req_lib.get(
                 f"{OSRM_BASE_URL}/route/v1/driving/{coordinates}",
-                params={"alternatives": 3, "steps": "false", "geometries": "geojson", "overview": "full"},
-                headers={"User-Agent": "PathRak/1.0 hackathon demo"},
+                params={"alternatives": "true", "steps": "false", "geometries": "geojson", "overview": "full"},
+                headers={"User-Agent": "PathRak/1.0 (https://github.com/NishchalKap/PathRak)"},
                 timeout=20,
             )
             res.raise_for_status()
@@ -469,12 +496,11 @@ def find_safe_route(req: RouteRequest):
                 }
                 for route in payload.get("routes", [])
             ]
-        else:
-            raise HTTPException(status_code=503, detail="No supported routing provider is configured.")
+            provider_used = "OSRM_DEMO"
     except HTTPException:
         raise
     except req_lib.exceptions.Timeout:
-        raise HTTPException(status_code=504, detail="Route service timed out.")
+        raise HTTPException(status_code=504, detail="Route service timed out. Please try again.")
     except req_lib.exceptions.HTTPError as e:
         raise HTTPException(status_code=502, detail=f"Route service error: {str(e)}")
     except Exception as e:
@@ -552,7 +578,7 @@ def find_safe_route(req: RouteRequest):
     return {
         "routes": scored_routes,
         "total": len(scored_routes),
-        "routing_provider": "OPENROUTESERVICE" if ROUTING_PROVIDER == "ors" else "OSRM_DEMO",
+        "routing_provider": provider_used,
         "routing_profile": "driving-car",
         "optimization_objective": req.optimization_objective,
         "route_ranking_algorithm": "PathRak Merge Sort",

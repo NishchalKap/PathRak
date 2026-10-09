@@ -41,6 +41,13 @@ class MapIntegrationTests(unittest.TestCase):
         })
         self.assertEqual(response.status_code, 422)
 
+    def test_route_rejects_identical_start_and_end(self):
+        response = self.client.post("/api/route/find-safe", json={
+            "waypoints": [{"lat": 12.9755, "lng": 77.6069}, {"lat": 12.9755, "lng": 77.6069}],
+        })
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("different locations", response.json()["detail"])
+
     @patch("requests.get")
     def test_osrm_no_route_is_not_reported_as_success(self, get_mock):
         provider_response = Mock()
@@ -70,6 +77,25 @@ class MapIntegrationTests(unittest.TestCase):
         self.assertEqual(route["coordinates"], [[12.9, 77.6], [12.91, 77.61]])
         self.assertEqual(route["distance_m"], 1000)
         self.assertEqual(route["duration_s"], 120)
+        self.assertIn("bounded_algorithm_graph", route)
+        self.assertGreaterEqual(len(route["bounded_algorithm_graph"]["nodes"]), 2)
+
+    def test_sort_endpoint(self):
+        response = self.client.post("/api/algorithms/sort", json={
+            "items": [45, 12, 89, -3, 23],
+            "algorithm": "merge",
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["sorted_items"], [-3, 12, 23, 45, 89])
+
+    def test_binary_search_endpoint(self):
+        response = self.client.post("/api/algorithms/binary-search", json={
+            "items": [-3, 12, 23, 45, 89],
+            "value": 23,
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["found"])
+        self.assertEqual(response.json()["index"], 2)
 
 
 if __name__ == "__main__":

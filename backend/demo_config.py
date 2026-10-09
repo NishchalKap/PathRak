@@ -28,17 +28,18 @@ def capability_config() -> dict:
         "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER"
     ))
     ors_ready = bool(os.getenv("ORS_API_KEY"))
-    routing_ready = ors_ready if ROUTING_PROVIDER == "ors" else DEMO_MODE and ROUTING_PROVIDER == "osrm_demo"
+    effective_provider = "ors" if (ROUTING_PROVIDER == "ors" and ors_ready) else "osrm_demo"
+    routing_ready = ors_ready if ROUTING_PROVIDER == "ors" else True
     return {
         "demo_mode": DEMO_MODE,
         "demo": DEMO_SCENARIO if DEMO_MODE else None,
         "services": {
             "map_tiles": {"provider": "OpenStreetMap Standard", "state": "EXTERNAL_SERVICE", "development_only": True},
             "routing": {
-                "provider": "OpenRouteService" if ROUTING_PROVIDER == "ors" else "OSRM public demo server",
+                "provider": "OpenRouteService" if effective_provider == "ors" else "OSRM public demo server",
                 "profile": "driving-car",
                 "state": "CONFIGURED" if routing_ready else "UNAVAILABLE",
-                "demo_only": ROUTING_PROVIDER == "osrm_demo",
+                "demo_only": effective_provider == "osrm_demo",
             },
             "safety_scores": {"state": "DEMO_DATA" if DEMO_MODE else "REAL_DATA"},
             "sms": {"provider": "Twilio", "state": "CONFIGURED_NOT_VERIFIED" if twilio_ready else "UNAVAILABLE"},

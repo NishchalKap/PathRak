@@ -106,3 +106,5 @@ export const runMst = (algorithm, graph) => api(`/api/network/${algorithm}`, "PO
 export const optimizeResources = (payload) => api("/api/resources/optimize", "POST", payload);
 export const runBenchmark = (payload) => api("/api/algorithms/benchmark", "POST", payload);
 export const generateSyntheticGraph = (payload) => api("/api/algorithms/synthetic-graph", "POST", payload);
+export const runSort = (payload) => api("/api/algorithms/sort", "POST", payload);
+export const runBinarySearch = (payload) => api("/api/algorithms/binary-search", "POST", payload);
