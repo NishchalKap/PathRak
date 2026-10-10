@@ -6,6 +6,9 @@ from fastapi import Header, HTTPException
 from jwt import PyJWKClient
 
 
+from demo_config import DEMO_MODE
+
+
 def _issuer() -> str:
     return os.getenv("CLERK_ISSUER_URL", "").rstrip("/")
 
@@ -17,6 +20,12 @@ def _jwks_client(issuer: str) -> PyJWKClient:
 
 def require_clerk_user(authorization: str | None = Header(default=None)) -> dict:
     """Validate a Clerk session JWT and return its claims."""
+    if DEMO_MODE and authorization == "Bearer demo-token-bengaluru":
+        return {
+            "sub": "demo_user_bengaluru",
+            "email": "demo@pathrak.local",
+            "name": "Demo User (Bengaluru)",
+        }
     issuer = _issuer()
     if not issuer:
         raise HTTPException(status_code=503, detail="CLERK_ISSUER_URL is not configured on the API.")

@@ -1,7 +1,7 @@
 import { SignInButton, SignUpButton } from "@clerk/react";
 import Icon from "../components/Icon";
 
-export default function LoginPage() {
+export default function LoginPage({ onDemoLogin }) {
   return (
     <main className="login-page">
       <section className="login-product">
@@ -11,7 +11,31 @@ export default function LoginPage() {
         <p className="login-footnote">PathRak · Personal safety platform</p>
       </section>
       <section className="login-access">
-        <div className="login-access-card"><span className="access-icon"><Icon name="profile" size={24} /></span><p className="eyebrow">Secure account access</p><h2>Your safety space is private.</h2><p>Sign in to continue or create an account. Authentication is securely managed by Clerk.</p><div className="login-actions"><SignUpButton mode="modal"><button className="btn btn-primary">Create account</button></SignUpButton><SignInButton mode="modal"><button className="btn btn-secondary">Sign in</button></SignInButton></div><small>Your emergency profile remains scoped to your signed-in account on this device.</small></div>
+        <div className="login-access-card">
+          <span className="access-icon"><Icon name="profile" size={24} /></span>
+          <p className="eyebrow">Secure account access</p>
+          <h2>Your safety space is private.</h2>
+          <p>Sign in to continue or create an account. Authentication is securely managed by Clerk.</p>
+          <div className="login-actions">
+            <SignUpButton mode="modal"><button className="btn btn-primary">Create account</button></SignUpButton>
+            <SignInButton mode="modal"><button className="btn btn-secondary">Sign in</button></SignInButton>
+          </div>
+          {onDemoLogin && (
+            <div className="demo-login-option mt-4 pt-3 border-t border-line text-center">
+              <button
+                type="button"
+                className="btn btn-quiet w-full demo-login-btn text-brand font-semibold"
+                onClick={onDemoLogin}
+              >
+                Explore Demo Environment
+              </button>
+              <small className="block mt-1 text-ink-faint">
+                Instant access to route optimization, DAA tools, and safety simulations.
+              </small>
+            </div>
+          )}
+          <small className="block mt-2">Your emergency profile remains scoped to your signed-in account on this device.</small>
+        </div>
       </section>
     </main>
   );

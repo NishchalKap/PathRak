@@ -56,6 +56,16 @@ const PAGE_COMPONENTS = {
 export default function App() {
   const { isLoaded, isSignedIn, user } = useUser();
   const { getToken } = useAuth();
+  const [demoAuth, setDemoAuth] = useState(() => {
+    return localStorage.getItem("pathrak_demo_auth") === "true";
+  });
+  const effectiveUser = user || (demoAuth ? {
+    id: "demo_user_bengaluru",
+    fullName: "PathRak Demo User",
+    firstName: "Demo",
+    primaryEmailAddress: { emailAddress: "demo@pathrak.org" },
+  } : null);
+  const effectiveSignedIn = isSignedIn || Boolean(demoAuth);
   const [page, setPage] = useState("home");
   const [userInfo, setUserInfo] = useState(null);
   const [livePos, setLivePos] = useState(null);
@@ -67,13 +77,18 @@ export default function App() {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [installed, setInstalled] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
-  const profileStorageKey = user?.id ? `pathrak_user_info:${user.id}` : null;
+  const profileStorageKey = effectiveUser?.id ? `pathrak_user_info:${effectiveUser.id}` : null;
   const demoPos = appConfig?.demo ? [appConfig.demo.start.lat, appConfig.demo.start.lng] : null;
   const currentPos = locationMode === "demo" ? demoPos : livePos;
   const monitor = useSafetyMonitor(userInfo, currentPos);
 
   useEffect(() => {
-    setAuthTokenProvider(() => getToken());
+    setAuthTokenProvider(async () => {
+      if (demoAuth && !isSignedIn) {
+        return "demo-token-bengaluru";
+      }
+      return getToken();
+    });
     getAppConfig()
       .then((cfg) => {
         setAppConfig(cfg);
@@ -83,7 +98,7 @@ export default function App() {
       })
       .catch(() => setAppConfig(null));
     return () => setAuthTokenProvider(null);
-  }, [getToken]);
+  }, [getToken, demoAuth, isSignedIn, livePos]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -94,26 +109,37 @@ export default function App() {
     localStorage.removeItem("pathrak_auth_token");
     localStorage.removeItem("safeher_auth_token");
 
-    if (!isLoaded || !isSignedIn || !profileStorageKey) {
+    if (!isLoaded || !effectiveSignedIn || !profileStorageKey) {
       setUserInfo(null);
       return;
     }
 
     const stored = localStorage.getItem(profileStorageKey);
     if (!stored) {
+      if (demoAuth) {
+        const demoProfile = {
+          user_id: "demo_user_bengaluru",
+          name: "PathRak Demo User",
+          emergency_contact: "+91 98765 43210",
+          medical_details: "Demo mode profile (Bengaluru)",
+        };
+        localStorage.setItem(profileStorageKey, JSON.stringify(demoProfile));
+        setUserInfo(demoProfile);
+        return;
+      }
       setUserInfo(null);
       return;
     }
 
     try {
-      const profile = { ...JSON.parse(stored), user_id: user.id };
+      const profile = { ...JSON.parse(stored), user_id: effectiveUser.id };
       localStorage.setItem(profileStorageKey, JSON.stringify(profile));
       setUserInfo(profile);
     } catch {
       localStorage.removeItem(profileStorageKey);
       setUserInfo(null);
     }
-  }, [isLoaded, isSignedIn, profileStorageKey, user?.id]);
+  }, [isLoaded, effectiveSignedIn, profileStorageKey, effectiveUser?.id, demoAuth]);
 
   useEffect(() => {
     if (!isSignedIn) {
@@ -185,7 +211,16 @@ export default function App() {
     return <div className="auth-loading" role="status"><span className="loading-mark"><Icon name="shield" size={28} /></span><strong>Preparing your safety space</strong><p>Securing your PathRak session...</p></div>;
   }
 
-  if (!isSignedIn) return <LoginPage />;
+  if (!effectiveSignedIn) {
+    return (
+      <LoginPage
+        onDemoLogin={() => {
+          localStorage.setItem("pathrak_demo_auth", "true");
+          setDemoAuth(true);
+        }}
+      />
+    );
+  }
 
   const hasCompletedProfile = Boolean(userInfo?.name && userInfo?.emergency_contact);
   const sharedProps = {
@@ -195,9 +230,9 @@ export default function App() {
     locationError,
     monitor,
     theme,
-    clerkUserId: user.id,
+    clerkUserId: effectiveUser?.id,
     profileStorageKey,
-    defaultName: user.fullName || user.firstName || "",
+    defaultName: effectiveUser?.fullName || effectiveUser?.firstName || "",
     onNavigate: navigate,
     onComplete: () => navigate("home"),
     onEditProfile: () => navigate("profile"),
@@ -211,7 +246,23 @@ export default function App() {
   if (!hasCompletedProfile) {
     return (
       <div className="onboarding-shell">
-        <header className="onboarding-bar"><Brand /><UserButton afterSignOutUrl="/" /></header>
+        <header className="onboarding-bar">
+          <Brand />
+          {user ? (
+            <UserButton afterSignOutUrl="/" />
+          ) : (
+            <button
+              type="button"
+              className="btn btn-xs btn-secondary"
+              onClick={() => {
+                localStorage.removeItem("pathrak_demo_auth");
+                setDemoAuth(false);
+              }}
+            >
+              Sign out
+            </button>
+          )}
+        </header>
         <main className="onboarding-main">
           <div className="onboarding-intro"><p className="eyebrow">One essential step</p><h1>Prepare your emergency profile.</h1><p>PathRak uses these details only when a safety feature needs them. You can update them at any time.</p></div>
           <StartPage {...sharedProps} isOnboarding />
@@ -235,7 +286,27 @@ export default function App() {
         </nav>
         <div className="rail-footer">
           {deferredPrompt && <button className="install-button" onClick={installApp}><Icon name="shield" size={18} />{installed ? "App installed" : "Install PathRak"}</button>}
-          <div className="rail-account"><UserButton afterSignOutUrl="/" /><span><strong>{user.fullName || userInfo.name}</strong><small>{user.primaryEmailAddress?.emailAddress || "Signed in"}</small></span></div>
+          <div className="rail-account">
+            {user ? (
+              <UserButton afterSignOutUrl="/" />
+            ) : (
+              <button
+                type="button"
+                className="icon-button"
+                title="Exit demo session"
+                onClick={() => {
+                  localStorage.removeItem("pathrak_demo_auth");
+                  setDemoAuth(false);
+                }}
+              >
+                <Icon name="profile" size={18} />
+              </button>
+            )}
+            <span>
+              <strong>{effectiveUser?.fullName || userInfo?.name || "Demo User"}</strong>
+              <small>{effectiveUser?.primaryEmailAddress?.emailAddress || "Demo session"}</small>
+            </span>
+          </div>
         </div>
       </aside>
 
@@ -268,7 +339,20 @@ export default function App() {
           </div>
           <div className="top-actions">
             <button className="icon-button" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} aria-label={`Use ${theme === "dark" ? "light" : "dark"} theme`}><Icon name={theme === "dark" ? "sun" : "moon"} /></button>
-            <UserButton afterSignOutUrl="/" />
+            {user ? (
+              <UserButton afterSignOutUrl="/" />
+            ) : (
+              <button
+                type="button"
+                className="btn btn-xs btn-secondary"
+                onClick={() => {
+                  localStorage.removeItem("pathrak_demo_auth");
+                  setDemoAuth(false);
+                }}
+              >
+                Sign out
+              </button>
+            )}
           </div>
         </header>
 
