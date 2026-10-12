@@ -117,6 +117,41 @@ Demo mode never replaces GPS silently. Use the visible **Use Bengaluru demo loca
 - In-memory users, SafeWalks, and SOS events are lost when the API restarts. Use a database before production.
 - On Vercel, danger pins are temporary `/tmp` data and continuous SafeWalk expiry monitoring is disabled because functions are ephemeral.
 
+## Pygame DAA Algorithm Studio
+
+PathRak includes a standalone Python/Pygame educational visualizer located at `backend/studio.py`.
+
+It visualizes algorithms step-by-step with state inspection, tentative distance updates, priority-queue and DSU components, pseudocode display, and CLRS asymptotic complexity analysis.
+
+### Features
+- **Dijkstra's Algorithm**: Visualizes tentative distance relaxation, priority queue extraction, and shortest-path reconstruction.
+- **Kruskal's Algorithm**: Visualizes edge examination in weight-sorted order, Disjoint Set Union (DSU) parent updates, and cycle rejection.
+- **Merge Sort**: Visualizes array partitioning, comparisons, and auxiliary sub-array merging.
+- **Shared Trace Contract**: Communicates with the PathRak FastAPI backend via `/api/algorithms/trace/*` or runs completely offline with deterministic sample graphs.
+
+### Running Pygame Studio
+```powershell
+# Using Python 3.11 with pygame-ce installed:
+& "C:\Users\Nishchal\AppData\Local\Programs\Python\Python311\python.exe" backend/studio.py
+```
+**Controls**:
+- `[Space]` Play / Pause animation.
+- `[Right Arrow]` Step forward.
+- `[Left Arrow]` Step backward.
+- `[R]` Reset execution.
+- `[1]`, `[2]`, `[3]` Switch between Dijkstra, Kruskal, and Merge Sort.
+- `[G]` Toggle graph dataset (e.g. Bengaluru Corridor vs. High-Density Mesh).
+- `[P]` Toggle pseudocode reference panel.
+
+## DAA Syllabus Educational Laboratory (CLRS)
+
+The web application's **Algorithm Analyzer** screen includes an interactive DAA Syllabus Laboratory:
+- **Divide & Conquer Min-Max**: Finding minimum and maximum simultaneously using $\approx 3N/2 - 2$ comparisons.
+- **Greedy Fractional Knapsack**: Value/weight ratio greedy selection with fractional items.
+- **Dynamic Programming LCS & LIS**: Longest Common Subsequence (CLRS Ch. 15) and Longest Increasing Subsequence table construction.
+- **Matrix Chain Multiplication (DP)**: Optimal parenthesization minimizing scalar multiplications.
+- **Backtracking Graph Coloring & N-Queens**: State-space tree exploration with pruning and backtrack step metrics.
+
 ## Verification
 
 ```powershell

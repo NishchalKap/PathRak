@@ -212,11 +212,30 @@ export default function RoutePage({ currentPos, theme, onStartSafeWalk, appConfi
   const [startEdited, setStartEdited] = useState(false);
   const [dataMode, setDataMode] = useState(null);
   const [routingProvider, setRoutingProvider] = useState(null);
-  const [objective, setObjective] = useState("risk");
+  const [objective, setObjective] = useState("safewalk");
   const [tileError, setTileError] = useState("");
   const [mapPickMode, setMapPickMode] = useState(null); // "start" | "end" | null
   const [dijkstraResult, setDijkstraResult] = useState(null);
   const [dijkstraLoading, setDijkstraLoading] = useState(false);
+  const [animIndex, setAnimIndex] = useState(0);
+  const [isSimulating, setIsSimulating] = useState(false);
+
+  useEffect(() => {
+    let timer = null;
+    if (isSimulating && routes[selectedRoute]?.coordinates?.length) {
+      const coords = routes[selectedRoute].coordinates;
+      timer = setInterval(() => {
+        setAnimIndex((prev) => {
+          if (prev >= coords.length - 1) {
+            setIsSimulating(false);
+            return coords.length - 1;
+          }
+          return prev + 1;
+        });
+      }, 350);
+    }
+    return () => clearInterval(timer);
+  }, [isSimulating, selectedRoute, routes]);
 
   useEffect(() => {
     if (!currentPos || startEdited) return;
@@ -466,6 +485,7 @@ export default function RoutePage({ currentPos, theme, onStartSafeWalk, appConfi
             value={objective}
             onChange={(event) => setObjective(event.target.value)}
           >
+            <option value="safewalk">SafeWalk (Weighted Multi-Objective Cost)</option>
             <option value="risk">Lowest observed risk</option>
             <option value="distance">Shortest distance</option>
             <option value="time">Fastest ETA</option>
@@ -577,6 +597,24 @@ export default function RoutePage({ currentPos, theme, onStartSafeWalk, appConfi
                   <strong>Destination</strong>
                   <br />
                   {end.name}
+                </Popup>
+              </CircleMarker>
+            )}
+            {routes[selectedRoute]?.coordinates?.[animIndex] && (
+              <CircleMarker
+                center={routes[selectedRoute].coordinates[animIndex]}
+                radius={7}
+                pathOptions={{
+                  color: "#ffffff",
+                  fillColor: "#0284c7",
+                  fillOpacity: 1,
+                  weight: 3,
+                }}
+              >
+                <Popup>
+                  <strong>Journey Simulation</strong>
+                  <br />
+                  Waypoints explored: {animIndex + 1} / {routes[selectedRoute].coordinates.length}
                 </Popup>
               </CircleMarker>
             )}
@@ -771,7 +809,40 @@ export default function RoutePage({ currentPos, theme, onStartSafeWalk, appConfi
                       )}
                     </ul>
                   </div>
-                  <div className="route-analysis-actions">
+                  <div className="route-legend p-3 bg-surface-subtle rounded border border-line text-xs my-2">
+                    <strong className="block mb-1">Route & Graph Legend</strong>
+                    <div className="flex gap-4 flex-wrap">
+                      <span className="flex items-center gap-1">
+                        <span className="inline-block w-3 h-3 rounded-full bg-[#11875d]"></span> Selected / Safe Route
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="inline-block w-3 h-3 rounded-full bg-[#b47712]"></span> Alternative Route
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="inline-block w-3 h-3 rounded-full bg-[#c9363e]"></span> High Risk Segment
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="inline-block w-3 h-3 rounded-full bg-[#0284c7]"></span> Journey Progress Marker
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="route-analysis-actions flex gap-2">
+                    <button
+                      type="button"
+                      className={`btn ${isSimulating ? "btn-secondary" : "btn-secondary"}`}
+                      onClick={() => {
+                        if (isSimulating) {
+                          setIsSimulating(false);
+                        } else {
+                          setAnimIndex(0);
+                          setIsSimulating(true);
+                        }
+                      }}
+                    >
+                      <Icon name="route" />
+                      {isSimulating ? "Pause Simulation" : "Simulate Journey"}
+                    </button>
                     <button className="btn btn-primary" onClick={startSelectedRoute}>
                       <Icon name="walk" />
                       Start SafeWalk

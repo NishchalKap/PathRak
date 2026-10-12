@@ -655,3 +655,484 @@ def _branch_and_bound(projects: list[dict], budget: int) -> tuple[list[dict], di
 
     visit(0, 0, 0, [])
     return best[1], {"nodes_explored": nodes, "branches_pruned": pruned, "optimal": True}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CLRS Syllabus Algorithms: Divide-and-Conquer, Greedy, DP, Backtracking
+# ─────────────────────────────────────────────────────────────────────────────
+
+def min_max_dc(arr: list[int | float]) -> tuple[int | float, int | float, int]:
+    """Divide-and-Conquer Min-Max finding.
+    
+    Returns (minimum, maximum, comparisons_count).
+    Recurrence: T(N) = 2T(N/2) + 2 for N > 2. Uses ~ 3N/2 - 2 comparisons.
+    """
+    if not arr:
+        raise ValueError("Array must not be empty.")
+    comparisons = 0
+
+    def _dc(low: int, high: int) -> tuple[int | float, int | float]:
+        nonlocal comparisons
+        if low == high:
+            return arr[low], arr[low]
+        if high == low + 1:
+            comparisons += 1
+            if arr[low] < arr[high]:
+                return arr[low], arr[high]
+            return arr[high], arr[low]
+        mid = (low + high) // 2
+        min1, max1 = _dc(low, mid)
+        min2, max2 = _dc(mid + 1, high)
+        comparisons += 2
+        return min(min1, min2), max(max1, max2)
+
+    min_val, max_val = _dc(0, len(arr) - 1)
+    return min_val, max_val, comparisons
+
+
+def fractional_knapsack(items: list[dict], capacity: float) -> dict:
+    """Greedy Fractional Knapsack.
+    
+    Items: [{"name": str, "weight": float, "value": float}]
+    Sorts by value/weight ratio descending and takes fractional fractions if needed.
+    """
+    if capacity < 0:
+        raise ValueError("Capacity cannot be negative.")
+    prepared = []
+    for item in items:
+        w, v = float(item["weight"]), float(item["value"])
+        if w <= 0 or v < 0:
+            raise ValueError("Weight must be > 0 and value >= 0.")
+        prepared.append({
+            "name": str(item["name"]),
+            "weight": w,
+            "value": v,
+            "ratio": v / w,
+        })
+    prepared.sort(key=lambda x: x["ratio"], reverse=True)
+    total_val = 0.0
+    remaining = capacity
+    taken = []
+    for item in prepared:
+        if remaining <= 0:
+            break
+        fraction = min(1.0, remaining / item["weight"])
+        taken_w = fraction * item["weight"]
+        taken_v = fraction * item["value"]
+        total_val += taken_v
+        remaining -= taken_w
+        taken.append({
+            "name": item["name"],
+            "fraction": round(fraction, 4),
+            "weight_taken": round(taken_w, 2),
+            "value_taken": round(taken_v, 2),
+        })
+    return {
+        "algorithm": "Fractional Knapsack (Greedy)",
+        "capacity": capacity,
+        "total_value": round(total_val, 4),
+        "items_taken": taken,
+    }
+
+
+def lcs(x: str, y: str) -> dict:
+    """Longest Common Subsequence using Dynamic Programming (CLRS Chapter 15).
+    
+    Constructs the DP table and reconstructs the LCS string.
+    Time: O(m*n), Space: O(m*n).
+    """
+    m, n = len(x), len(y)
+    table = [[0] * (n + 1) for _ in range(m + 1)]
+    for i in range(1, m + 1):
+        for j in range(1, n + 1):
+            if x[i - 1] == y[j - 1]:
+                table[i][j] = table[i - 1][j - 1] + 1
+            else:
+                table[i][j] = max(table[i - 1][j], table[i][j - 1])
+    # Backtrack to reconstruct
+    lcs_chars = []
+    i, j = m, n
+    while i > 0 and j > 0:
+        if x[i - 1] == y[j - 1]:
+            lcs_chars.append(x[i - 1])
+            i -= 1
+            j -= 1
+        elif table[i - 1][j] >= table[i][j - 1]:
+            i -= 1
+        else:
+            j -= 1
+    lcs_str = "".join(reversed(lcs_chars))
+    return {
+        "algorithm": "LCS (Dynamic Programming)",
+        "length": table[m][n],
+        "sequence": lcs_str,
+        "table_rows": m + 1,
+        "table_cols": n + 1,
+    }
+
+
+def lis(arr: list[int | float]) -> dict:
+    """Longest Increasing Subsequence using Dynamic Programming.
+    
+    Time: O(N^2), Space: O(N).
+    """
+    if not arr:
+        return {"algorithm": "LIS (Dynamic Programming)", "length": 0, "sequence": []}
+    n = len(arr)
+    dp = [1] * n
+    parent = [-1] * n
+    for i in range(n):
+        for j in range(i):
+            if arr[j] < arr[i] and dp[j] + 1 > dp[i]:
+                dp[i] = dp[j] + 1
+                parent[i] = j
+    max_len = max(dp)
+    last_idx = dp.index(max_len)
+    seq = []
+    curr = last_idx
+    while curr != -1:
+        seq.append(arr[curr])
+        curr = parent[curr]
+    seq.reverse()
+    return {
+        "algorithm": "LIS (Dynamic Programming)",
+        "length": max_len,
+        "sequence": seq,
+    }
+
+
+def matrix_chain_order(p: list[int]) -> dict:
+    """Matrix Chain Multiplication optimal parenthesization (CLRS Chapter 15).
+    
+    p contains dimensions such that matrix i has dimension p[i-1] x p[i].
+    Time: O(n^3), Space: O(n^2).
+    """
+    n = len(p) - 1
+    if n < 1:
+        raise ValueError("At least one matrix dimension pair required (len(p) >= 2).")
+    m = [[0] * (n + 1) for _ in range(n + 1)]
+    s = [[0] * (n + 1) for _ in range(n + 1)]
+    for l in range(2, n + 1):
+        for i in range(1, n - l + 2):
+            j = i + l - 1
+            m[i][j] = float("inf")
+            for k in range(i, j):
+                q = m[i][k] + m[k + 1][j] + p[i - 1] * p[k] * p[j]
+                if q < m[i][j]:
+                    m[i][j] = q
+                    s[i][j] = k
+
+    def print_optimal(i: int, j: int) -> str:
+        if i == j:
+            return f"A{i}"
+        return f"({print_optimal(i, s[i][j])} × {print_optimal(s[i][j] + 1, j)})"
+
+    return {
+        "algorithm": "Matrix Chain Order (Dynamic Programming)",
+        "min_multiplications": m[1][n],
+        "optimal_parenthesization": print_optimal(1, n),
+        "matrices_count": n,
+    }
+
+
+def graph_coloring(nodes: list[str], edges: list[dict], max_colors: int) -> dict:
+    """Graph Coloring using Backtracking (CLRS / Graph Theory).
+    
+    Finds if graph can be colored with <= max_colors such that no two adjacent
+    vertices share the same color.
+    """
+    node_list, _, adjacency = build_graph(nodes, edges, directed=False)
+    colors: dict[str, int] = {}
+    nodes_order = list(node_list)
+
+    def is_safe(v: str, c: int) -> bool:
+        for neighbour, _ in adjacency[v]:
+            if colors.get(neighbour) == c:
+                return False
+        return True
+
+    backtrack_steps = 0
+
+    def solve(idx: int) -> bool:
+        nonlocal backtrack_steps
+        if idx == len(nodes_order):
+            return True
+        v = nodes_order[idx]
+        for c in range(1, max_colors + 1):
+            if is_safe(v, c):
+                colors[v] = c
+                if solve(idx + 1):
+                    return True
+                backtrack_steps += 1
+                colors.pop(v, None)
+        return False
+
+    success = solve(0)
+    return {
+        "algorithm": "Graph Coloring (Backtracking)",
+        "colorable": success,
+        "max_colors": max_colors,
+        "assigned_colors": colors if success else {},
+        "backtrack_steps": backtrack_steps,
+    }
+
+
+def n_queens(n: int) -> dict:
+    """N-Queens using Backtracking.
+    
+    Places N non-attacking queens on an N x N chessboard.
+    Returns the first solution board coordinates and total placements tested.
+    """
+    if n < 1 or n > 20:
+        raise ValueError("N must be between 1 and 20.")
+    board = [-1] * n
+    steps = 0
+
+    def is_valid(row: int, col: int) -> bool:
+        for r in range(row):
+            c = board[r]
+            if c == col or abs(c - col) == abs(r - row):
+                return False
+        return True
+
+    def place(row: int) -> bool:
+        nonlocal steps
+        if row == n:
+            return True
+        for col in range(n):
+            steps += 1
+            if is_valid(row, col):
+                board[row] = col
+                if place(row + 1):
+                    return True
+                board[row] = -1
+        return False
+
+    found = place(0)
+    return {
+        "algorithm": f"{n}-Queens (Backtracking)",
+        "n": n,
+        "solution_found": found,
+        "board_positions": list(board) if found else [],
+        "steps_explored": steps,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Step-by-Step Execution Traces for Shared Contract (Web & Pygame Studio)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def record_dijkstra_trace(
+    nodes: Iterable[Any],
+    edges: Iterable[dict],
+    start: Any,
+    target: Any,
+    criterion: str = "distance",
+    directed: bool = False,
+) -> dict:
+    """Records deterministic step-by-step trace events of Dijkstra's algorithm.
+    
+    Event schema conforms to Section 7:
+    - step: int
+    - event_type: "INITIALIZE" | "POP_MIN" | "EXAMINE_EDGE" | "RELAX" | "FINALIZE" | "COMPLETE"
+    - current_vertex: str
+    - edge: dict | None
+    - distances: dict[str, float]
+    - predecessors: dict[str, str | None]
+    - priority_queue: list[tuple[float, str]]
+    - explanation: str
+    """
+    if criterion not in CRITERIA:
+        raise ValueError(f"criterion must be one of {sorted(CRITERIA)}")
+    node_list, materialized, adjacency = build_graph(nodes, edges, directed)
+    start_s, target_s = _node(start), _node(target)
+    if start_s not in adjacency or target_s not in adjacency:
+        raise ValueError("Start and target must be graph vertices.")
+
+    events = []
+    step_num = 0
+
+    distances: dict[str, float] = {n: float("inf") for n in node_list}
+    distances[start_s] = 0.0
+    predecessors: dict[str, Optional[str]] = {n: None for n in node_list}
+    pq: list[tuple[float, str]] = [(0.0, start_s)]
+    finalized: set[str] = set()
+
+    step_num += 1
+    events.append({
+        "step": step_num,
+        "event_type": "INITIALIZE",
+        "current_vertex": start_s,
+        "edge": None,
+        "distances": dict(distances),
+        "predecessors": dict(predecessors),
+        "priority_queue": list(pq),
+        "finalized": list(finalized),
+        "explanation": f"Initialize distances with 0 for start vertex '{start_s}' and ∞ for all other vertices.",
+    })
+
+    reached = False
+    while pq:
+        d, curr = heappop(pq)
+        if curr in finalized:
+            continue
+        finalized.add(curr)
+        step_num += 1
+        events.append({
+            "step": step_num,
+            "event_type": "POP_MIN",
+            "current_vertex": curr,
+            "edge": None,
+            "distances": dict(distances),
+            "predecessors": dict(predecessors),
+            "priority_queue": list(pq),
+            "finalized": list(finalized),
+            "explanation": f"Extracted vertex '{curr}' with minimum tentative distance {d:.1f}.",
+        })
+
+        if curr == target_s:
+            reached = True
+            break
+
+        for neighbour, edge in adjacency[curr]:
+            w = edge.weights[criterion]
+            step_num += 1
+            events.append({
+                "step": step_num,
+                "event_type": "EXAMINE_EDGE",
+                "current_vertex": curr,
+                "edge": {"source": curr, "target": neighbour, "weight": w},
+                "distances": dict(distances),
+                "predecessors": dict(predecessors),
+                "priority_queue": list(pq),
+                "finalized": list(finalized),
+                "explanation": f"Examining edge ({curr} -> {neighbour}) with weight {w:.1f}.",
+            })
+
+            new_dist = d + w
+            if new_dist < distances[neighbour]:
+                distances[neighbour] = new_dist
+                predecessors[neighbour] = curr
+                heappush(pq, (new_dist, neighbour))
+                step_num += 1
+                events.append({
+                    "step": step_num,
+                    "event_type": "RELAX",
+                    "current_vertex": curr,
+                    "edge": {"source": curr, "target": neighbour, "weight": w},
+                    "distances": dict(distances),
+                    "predecessors": dict(predecessors),
+                    "priority_queue": list(pq),
+                    "finalized": list(finalized),
+                    "explanation": f"Relaxed distance to '{neighbour}' down to {new_dist:.1f} via '{curr}'.",
+                })
+
+    path = _reconstruct(predecessors, target_s) if reached else []
+    step_num += 1
+    events.append({
+        "step": step_num,
+        "event_type": "COMPLETE",
+        "current_vertex": target_s if reached else None,
+        "edge": None,
+        "distances": dict(distances),
+        "predecessors": dict(predecessors),
+        "priority_queue": list(pq),
+        "finalized": list(finalized),
+        "final_path": path,
+        "total_cost": distances[target_s] if reached else None,
+        "explanation": f"Algorithm finished. Optimal path: {' -> '.join(path) if path else 'Unreachable'} (Cost: {distances[target_s] if reached else '∞'}).",
+    })
+
+    return {
+        "algorithm": "Dijkstra",
+        "criterion": criterion,
+        "start": start_s,
+        "target": target_s,
+        "nodes": node_list,
+        "edges": [{"source": e.source, "target": e.target, "weight": e.weights[criterion]} for e in materialized if criterion in e.weights],
+        "events": events,
+        "total_steps": len(events),
+        "final_path": path,
+        "total_cost": distances[target_s] if reached else None,
+        "reachable": reached,
+    }
+
+
+def record_kruskal_trace(
+    nodes: Iterable[Any], edges: Iterable[dict], criterion: str = "cost"
+) -> dict:
+    """Records deterministic step-by-step trace events of Kruskal's algorithm."""
+    node_list, materialized, _ = build_graph(nodes, edges, False)
+    if criterion not in CRITERIA:
+        raise ValueError("Invalid MST criterion.")
+    dsu = DisjointSetUnion(node_list)
+    sorted_edges = sorted(
+        materialized,
+        key=lambda item: (item.weights[criterion], item.source, item.target),
+    )
+    events = []
+    step_num = 0
+    selected_edges = []
+    total_cost = 0.0
+
+    step_num += 1
+    events.append({
+        "step": step_num,
+        "event_type": "INITIALIZE",
+        "edge": None,
+        "selected_edges": [],
+        "dsu_components": dsu.components(),
+        "total_cost": 0.0,
+        "explanation": f"Initialized DSU with {len(node_list)} individual components. Sorted {len(sorted_edges)} candidate edges.",
+    })
+
+    for edge in sorted_edges:
+        step_num += 1
+        w = edge.weights[criterion]
+        root_u = dsu.find(edge.source)
+        root_v = dsu.find(edge.target)
+        if root_u != root_v:
+            dsu.union(edge.source, edge.target)
+            selected_edges.append({"source": edge.source, "target": edge.target, "weight": w})
+            total_cost += w
+            events.append({
+                "step": step_num,
+                "event_type": "ACCEPT_EDGE",
+                "edge": {"source": edge.source, "target": edge.target, "weight": w},
+                "selected_edges": list(selected_edges),
+                "dsu_components": dsu.components(),
+                "total_cost": total_cost,
+                "explanation": f"Accepted edge ({edge.source} — {edge.target}, wt {w}) connecting components '{root_u}' and '{root_v}'.",
+            })
+        else:
+            events.append({
+                "step": step_num,
+                "event_type": "REJECT_EDGE",
+                "edge": {"source": edge.source, "target": edge.target, "weight": w},
+                "selected_edges": list(selected_edges),
+                "dsu_components": dsu.components(),
+                "total_cost": total_cost,
+                "explanation": f"Rejected edge ({edge.source} — {edge.target}, wt {w}) to prevent cycle in component '{root_u}'.",
+            })
+
+    step_num += 1
+    events.append({
+        "step": step_num,
+        "event_type": "COMPLETE",
+        "edge": None,
+        "selected_edges": list(selected_edges),
+        "dsu_components": dsu.components(),
+        "total_cost": total_cost,
+        "explanation": f"Kruskal's algorithm complete. Total weight: {total_cost:.1f} across {len(selected_edges)} edges.",
+    })
+
+    return {
+        "algorithm": "Kruskal",
+        "criterion": criterion,
+        "nodes": node_list,
+        "events": events,
+        "total_steps": len(events),
+        "selected_edges": selected_edges,
+        "total_cost": total_cost,
+    }
+

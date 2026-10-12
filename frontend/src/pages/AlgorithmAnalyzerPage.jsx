@@ -1,5 +1,16 @@
 import { useState } from "react";
-import { runBenchmark, runSort, runBinarySearch } from "../api";
+import {
+  runBenchmark,
+  runSort,
+  runBinarySearch,
+  runMinMax,
+  runFractionalKnapsack,
+  runLcs,
+  runLis,
+  runMatrixChain,
+  runGraphColoring,
+  runNQueens,
+} from "../api";
 import { Metric, Notice, PageHeader } from "../components/UI";
 
 const GRAPH_ALGORITHMS = [
@@ -18,7 +29,7 @@ const SEQUENCE_ALGORITHMS = [
 ];
 
 export default function AlgorithmAnalyzerPage() {
-  const [activeTab, setActiveTab] = useState("benchmark"); // "benchmark" | "sandbox"
+  const [activeTab, setActiveTab] = useState("benchmark"); // "benchmark" | "sandbox" | "syllabus"
   
   // Benchmark state
   const [selectedAlgo, setSelectedAlgo] = useState("dijkstra");
@@ -37,6 +48,23 @@ export default function AlgorithmAnalyzerPage() {
   const [searchResult, setSearchResult] = useState(null);
   const [sandboxLoading, setSandboxLoading] = useState(false);
   const [sandboxError, setSandboxError] = useState("");
+
+  // Syllabus Lab state
+  const [minMaxInput, setMinMaxInput] = useState("3, 9, -2, 14, 0, 8, 22, -10");
+  const [minMaxResult, setMinMaxResult] = useState(null);
+  const [knapsackCap, setKnapsackCap] = useState("50");
+  const [knapsackResult, setKnapsackResult] = useState(null);
+  const [lcsStr1, setLcsStr1] = useState("ABCBDAB");
+  const [lcsStr2, setLcsStr2] = useState("BDCAB");
+  const [lcsResult, setLcsResult] = useState(null);
+  const [lisInput, setLisInput] = useState("10, 22, 9, 33, 21, 50, 41, 60, 80");
+  const [lisResult, setLisResult] = useState(null);
+  const [matrixDimInput, setMatrixDimInput] = useState("10, 20, 30, 40");
+  const [matrixResult, setMatrixResult] = useState(null);
+  const [nQueensVal, setNQueensVal] = useState("4");
+  const [nQueensResult, setNQueensResult] = useState(null);
+  const [coloringResult, setColoringResult] = useState(null);
+  const [syllabusLoading, setSyllabusLoading] = useState(false);
 
   const isGraphAlgo = GRAPH_ALGORITHMS.some((a) => a.id === selectedAlgo);
 
@@ -131,6 +159,13 @@ export default function AlgorithmAnalyzerPage() {
           onClick={() => setActiveTab("sandbox")}
         >
           Sorting & Search Interactive Sandbox
+        </button>
+        <button
+          type="button"
+          className={`btn btn-sm ${activeTab === "syllabus" ? "btn-primary" : "btn-secondary"}`}
+          onClick={() => setActiveTab("syllabus")}
+        >
+          DAA Syllabus Laboratory (CLRS)
         </button>
       </div>
 
@@ -272,7 +307,7 @@ export default function AlgorithmAnalyzerPage() {
             </section>
           )}
         </>
-      ) : (
+      ) : activeTab === "sandbox" ? (
         /* Sandbox Tab */
         <section className="panel data-panel">
           <h2>Interactive Sorting & Binary Search Sandbox</h2>
@@ -369,6 +404,258 @@ export default function AlgorithmAnalyzerPage() {
               </div>
             </div>
           )}
+        </section>
+      ) : (
+        /* DAA Syllabus Laboratory Tab */
+        <section className="panel syllabus-lab space-y-6">
+          <div className="border-b border-line pb-3">
+            <h2 className="text-base font-bold">DAA Syllabus Educational Laboratory</h2>
+            <p className="text-xs text-ink-soft">
+              Interactive demonstrations for Divide & Conquer, Greedy, Dynamic Programming, and Backtracking algorithms implemented in PathRak's core engine.
+            </p>
+          </div>
+
+          {/* 1. Divide & Conquer Min-Max */}
+          <div className="bg-surface-subtle p-4 rounded-lg border border-line">
+            <h3 className="text-sm font-semibold mb-1">1. Divide & Conquer Min-Max Finding</h3>
+            <p className="text-xs text-ink-soft mb-3">
+              Computes both minimum and maximum simultaneously using ~ 3N/2 - 2 comparisons instead of 2N - 2.
+            </p>
+            <div className="flex gap-2 items-center flex-wrap">
+              <input
+                className="input text-xs font-mono w-72"
+                value={minMaxInput}
+                onChange={(e) => setMinMaxInput(e.target.value)}
+                placeholder="Comma separated numbers"
+              />
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={async () => {
+                  setSyllabusLoading(true);
+                  try {
+                    const nums = minMaxInput.split(",").map((s) => parseFloat(s.trim())).filter((n) => !isNaN(n));
+                    const res = await runMinMax({ items: nums });
+                    setMinMaxResult(res);
+                  } catch (e) {
+                    alert(e.message);
+                  } finally {
+                    setSyllabusLoading(false);
+                  }
+                }}
+                disabled={syllabusLoading}
+              >
+                Run Min-Max D&C
+              </button>
+            </div>
+            {minMaxResult && (
+              <div className="mt-3 p-2 bg-surface rounded border border-line text-xs grid grid-cols-3 gap-2">
+                <span>Minimum: <strong className="text-safe">{minMaxResult.minimum}</strong></span>
+                <span>Maximum: <strong className="text-brand">{minMaxResult.maximum}</strong></span>
+                <span>Comparisons: <strong>{minMaxResult.comparisons}</strong></span>
+              </div>
+            )}
+          </div>
+
+          {/* 2. Greedy Fractional Knapsack */}
+          <div className="bg-surface-subtle p-4 rounded-lg border border-line">
+            <h3 className="text-sm font-semibold mb-1">2. Greedy Fractional Knapsack</h3>
+            <p className="text-xs text-ink-soft mb-3">
+              Sorts items by value/weight ratio descending. Items can be taken fractionally to maximize total value.
+            </p>
+            <div className="flex gap-2 items-center mb-3">
+              <label className="text-xs">Capacity:</label>
+              <input
+                type="number"
+                className="input w-24 text-xs"
+                value={knapsackCap}
+                onChange={(e) => setKnapsackCap(e.target.value)}
+              />
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={async () => {
+                  setSyllabusLoading(true);
+                  try {
+                    const sampleItems = [
+                      { name: "Electronics", weight: 10, value: 60 },
+                      { name: "Medical Kits", weight: 20, value: 100 },
+                      { name: "Rations", weight: 30, value: 120 },
+                    ];
+                    const res = await runFractionalKnapsack({ items: sampleItems, capacity: parseFloat(knapsackCap) });
+                    setKnapsackResult(res);
+                  } catch (e) {
+                    alert(e.message);
+                  } finally {
+                    setSyllabusLoading(false);
+                  }
+                }}
+                disabled={syllabusLoading}
+              >
+                Run Fractional Knapsack
+              </button>
+            </div>
+            {knapsackResult && (
+              <div className="p-2 bg-surface rounded border border-line text-xs">
+                <p className="font-semibold text-safe mb-2">Total Optimal Value: ₹{knapsackResult.total_value}</p>
+                <div className="space-y-1">
+                  {knapsackResult.items_taken.map((item, idx) => (
+                    <div key={idx} className="flex justify-between border-b border-line py-1">
+                      <span>{item.name}</span>
+                      <span>Fraction taken: <strong>{(item.fraction * 100).toFixed(1)}%</strong> ({item.weight_taken} kg, ₹{item.value_taken})</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 3. Dynamic Programming: LCS & LIS */}
+          <div className="bg-surface-subtle p-4 rounded-lg border border-line">
+            <h3 className="text-sm font-semibold mb-1">3. Dynamic Programming: LCS & LIS</h3>
+            <p className="text-xs text-ink-soft mb-3">
+              Longest Common Subsequence (CLRS Ch. 15) and Longest Increasing Subsequence table construction.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <strong className="text-xs block mb-1">Longest Common Subsequence (LCS):</strong>
+                <div className="flex gap-2 mb-2">
+                  <input className="input text-xs w-28" value={lcsStr1} onChange={(e) => setLcsStr1(e.target.value)} placeholder="String 1" />
+                  <input className="input text-xs w-28" value={lcsStr2} onChange={(e) => setLcsStr2(e.target.value)} placeholder="String 2" />
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={async () => {
+                      const res = await runLcs({ x: lcsStr1, y: lcsStr2 });
+                      setLcsResult(res);
+                    }}
+                  >
+                    Solve LCS
+                  </button>
+                </div>
+                {lcsResult && (
+                  <p className="text-xs bg-surface p-2 rounded border border-line">
+                    LCS Length: <strong>{lcsResult.length}</strong> | Sequence: <strong className="text-safe">"{lcsResult.sequence}"</strong>
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <strong className="text-xs block mb-1">Longest Increasing Subsequence (LIS):</strong>
+                <div className="flex gap-2 mb-2">
+                  <input className="input text-xs font-mono w-44" value={lisInput} onChange={(e) => setLisInput(e.target.value)} />
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={async () => {
+                      const nums = lisInput.split(",").map((s) => parseFloat(s.trim())).filter((n) => !isNaN(n));
+                      const res = await runLis({ items: nums });
+                      setLisResult(res);
+                    }}
+                  >
+                    Solve LIS
+                  </button>
+                </div>
+                {lisResult && (
+                  <p className="text-xs bg-surface p-2 rounded border border-line">
+                    LIS Length: <strong>{lisResult.length}</strong> | Sequence: <strong className="text-safe">[{lisResult.sequence.join(", ")}]</strong>
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 4. Matrix Chain Multiplication */}
+          <div className="bg-surface-subtle p-4 rounded-lg border border-line">
+            <h3 className="text-sm font-semibold mb-1">4. Matrix Chain Multiplication (DP)</h3>
+            <p className="text-xs text-ink-soft mb-3">
+              Finds optimal parenthesization order to minimize scalar multiplications (CLRS Ch. 15.2).
+            </p>
+            <div className="flex gap-2 items-center mb-2">
+              <label className="text-xs">Dimensions p:</label>
+              <input className="input text-xs font-mono w-44" value={matrixDimInput} onChange={(e) => setMatrixDimInput(e.target.value)} />
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={async () => {
+                  const dims = matrixDimInput.split(",").map((s) => parseInt(s.trim())).filter((n) => !isNaN(n));
+                  const res = await runMatrixChain({ dimensions: dims });
+                  setMatrixResult(res);
+                }}
+              >
+                Compute Optimal Chain
+              </button>
+            </div>
+            {matrixResult && (
+              <div className="p-2 bg-surface rounded border border-line text-xs grid grid-cols-2 gap-2">
+                <span>Minimum Multiplications: <strong className="text-safe">{matrixResult.min_multiplications}</strong></span>
+                <span>Optimal Parenthesization: <strong className="font-mono text-brand">{matrixResult.optimal_parenthesization}</strong></span>
+              </div>
+            )}
+          </div>
+
+          {/* 5. Backtracking: Graph Coloring & N-Queens */}
+          <div className="bg-surface-subtle p-4 rounded-lg border border-line">
+            <h3 className="text-sm font-semibold mb-1">5. Backtracking: Graph Coloring & N-Queens</h3>
+            <p className="text-xs text-ink-soft mb-3">
+              State-space tree exploration with pruning and backtrack steps.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <strong className="text-xs block mb-1">N-Queens Solver:</strong>
+                <div className="flex gap-2 mb-2 items-center">
+                  <label className="text-xs">N:</label>
+                  <input type="number" min="1" max="14" className="input text-xs w-16" value={nQueensVal} onChange={(e) => setNQueensVal(e.target.value)} />
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={async () => {
+                      const res = await runNQueens({ n: parseInt(nQueensVal) });
+                      setNQueensResult(res);
+                    }}
+                  >
+                    Solve N-Queens
+                  </button>
+                </div>
+                {nQueensResult && (
+                  <div className="p-2 bg-surface rounded border border-line text-xs">
+                    <p className="font-semibold text-safe mb-1">
+                      {nQueensResult.solution_found ? `✓ Solution found in ${nQueensResult.steps_explored} search steps` : "✗ No solution"}
+                    </p>
+                    <p className="font-mono text-xs">
+                      Column positions per row: [{nQueensResult.board_positions.join(", ")}]
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <strong className="text-xs block mb-1">3-Coloring on 4-Vertex Graph:</strong>
+                <p className="text-xs text-ink-soft mb-2">Backtracking graph color assignment ensuring adjacent vertices have distinct colors.</p>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={async () => {
+                    const sampleGraph = {
+                      nodes: ["A", "B", "C", "D"],
+                      edges: [
+                        { source: "A", target: "B" },
+                        { source: "B", target: "C" },
+                        { source: "C", target: "D" },
+                        { source: "A", target: "C" },
+                      ],
+                      max_colors: 3,
+                    };
+                    const res = await runGraphColoring(sampleGraph);
+                    setColoringResult(res);
+                  }}
+                >
+                  Solve 3-Coloring
+                </button>
+                {coloringResult && (
+                  <div className="mt-2 p-2 bg-surface rounded border border-line text-xs">
+                    <p className="text-safe font-semibold">✓ Colorable with 3 colors!</p>
+                    <p className="font-mono text-xs mt-1">
+                      {JSON.stringify(coloringResult.assigned_colors)}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </section>
       )}
     </div>

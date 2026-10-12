@@ -16,6 +16,9 @@ from demo_config import DEMO_MODE, OSRM_BASE_URL, ROUTING_PROVIDER, capability_c
 from algorithm_engine import (
     benchmark, bfs, binary_search, dfs, dijkstra, kruskal, optimize_projects,
     prim, sort_routes, synthetic_graph, merge_sort,
+    record_dijkstra_trace, record_kruskal_trace,
+    min_max_dc, fractional_knapsack, lcs, lis, matrix_chain_order,
+    graph_coloring, n_queens,
 )
 
 from model import (
@@ -97,12 +100,12 @@ class RouteRequest(BaseModel):
     waypoints: List[Waypoint] = Field(..., min_items=2)  # FIX: Require at least 2 waypoints
     hour: Optional[int] = Field(None, ge=0, le=23)
     day_of_week: Optional[int] = Field(None, ge=0, le=6)
-    optimization_objective: str = "risk"
-
+    optimization_objective: str = "safewalk"
+ 
     @validator("optimization_objective")
     def validate_optimization_objective(cls, value):
-        if value not in {"distance", "time", "cost", "risk"}:
-            raise ValueError("optimization_objective must be distance, time, cost, or risk")
+        if value not in {"distance", "time", "cost", "risk", "safewalk"}:
+            raise ValueError("optimization_objective must be distance, time, cost, risk, or safewalk")
         return value
 
 class LightingRequest(BaseModel):
@@ -206,6 +209,42 @@ class SyntheticGraphRequest(BaseModel):
 class BenchmarkRequest(SyntheticGraphRequest):
     algorithm: str = "dijkstra"
     trials: int = Field(5, ge=1, le=50)
+
+
+class MinMaxRequest(BaseModel):
+    items: List[float] = Field(..., min_length=1, max_length=10000)
+
+
+class FractionalKnapsackItem(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    weight: float = Field(gt=0, le=100000)
+    value: float = Field(ge=0, le=100000)
+
+
+class FractionalKnapsackRequest(BaseModel):
+    items: List[FractionalKnapsackItem] = Field(..., min_length=1, max_length=100)
+    capacity: float = Field(ge=0, le=1000000)
+
+
+class LcsRequest(BaseModel):
+    x: str = Field(..., max_length=500)
+    y: str = Field(..., max_length=500)
+
+
+class LisRequest(BaseModel):
+    items: List[float] = Field(..., max_length=1000)
+
+
+class MatrixChainRequest(BaseModel):
+    dimensions: List[int] = Field(..., min_length=2, max_length=50)
+
+
+class GraphColoringRequest(GraphRequest):
+    max_colors: int = Field(..., ge=1, le=20)
+
+
+class NQueensRequest(BaseModel):
+    n: int = Field(..., ge=1, le=16)
 
 
 # ── Health ─────────────────────────────────────────────────────────────────────
@@ -362,6 +401,88 @@ def resource_optimize(req: ResourceRequest):
 def algorithm_benchmark(req: BenchmarkRequest):
     try:
         return benchmark(req.algorithm, req.size, req.density, req.trials, req.seed)
+    except ValueError as exc:
+        _algorithm_error(exc)
+
+
+# ── Execution Traces (Shared contract with Pygame & Web) ────────────────────
+
+@app.post("/api/algorithms/trace/dijkstra")
+def algorithm_trace_dijkstra(req: TraversalRequest):
+    try:
+        nodes, edges, directed = _graph_payload(req)
+        if req.target is None:
+            raise ValueError("Dijkstra trace requires a target vertex.")
+        return record_dijkstra_trace(nodes, edges, req.start, req.target, req.criterion, directed)
+    except ValueError as exc:
+        _algorithm_error(exc)
+
+
+@app.post("/api/algorithms/trace/kruskal")
+def algorithm_trace_kruskal(req: MstRequest):
+    try:
+        nodes, edges, _ = _graph_payload(req)
+        return record_kruskal_trace(nodes, edges, req.criterion)
+    except ValueError as exc:
+        _algorithm_error(exc)
+
+
+# ── Additional DAA Syllabus Endpoints ────────────────────────────────────────
+
+@app.post("/api/algorithms/min-max")
+def algorithm_min_max(req: MinMaxRequest):
+    try:
+        min_val, max_val, comps = min_max_dc(req.items)
+        return {"minimum": min_val, "maximum": max_val, "comparisons": comps}
+    except ValueError as exc:
+        _algorithm_error(exc)
+
+
+@app.post("/api/algorithms/fractional-knapsack")
+def algorithm_fractional_knapsack(req: FractionalKnapsackRequest):
+    try:
+        return fractional_knapsack([item.model_dump() for item in req.items], req.capacity)
+    except ValueError as exc:
+        _algorithm_error(exc)
+
+
+@app.post("/api/algorithms/lcs")
+def algorithm_lcs(req: LcsRequest):
+    try:
+        return lcs(req.x, req.y)
+    except ValueError as exc:
+        _algorithm_error(exc)
+
+
+@app.post("/api/algorithms/lis")
+def algorithm_lis(req: LisRequest):
+    try:
+        return lis(req.items)
+    except ValueError as exc:
+        _algorithm_error(exc)
+
+
+@app.post("/api/algorithms/matrix-chain")
+def algorithm_matrix_chain(req: MatrixChainRequest):
+    try:
+        return matrix_chain_order(req.dimensions)
+    except ValueError as exc:
+        _algorithm_error(exc)
+
+
+@app.post("/api/algorithms/graph-coloring")
+def algorithm_graph_coloring(req: GraphColoringRequest):
+    try:
+        nodes, edges, _ = _graph_payload(req)
+        return graph_coloring(nodes, edges, req.max_colors)
+    except ValueError as exc:
+        _algorithm_error(exc)
+
+
+@app.post("/api/algorithms/n-queens")
+def algorithm_n_queens(req: NQueensRequest):
+    try:
+        return n_queens(req.n)
     except ValueError as exc:
         _algorithm_error(exc)
 
@@ -559,12 +680,27 @@ def find_safe_route(req: RouteRequest):
             "is_safest": False,
         })
 
+    # Compute SafeWalk multi-objective composite cost:
+    # cost(route) = alpha * norm_distance + beta * norm_time + gamma * norm_risk
+    # with alpha = 0.2, beta = 0.2, gamma = 0.6 prioritizing safety while balancing transit cost.
+    max_d = max((r["distance_m"] for r in scored_routes), default=1) or 1
+    max_t = max((r["duration_s"] for r in scored_routes), default=1) or 1
+    max_r = max((r["avg_risk"] for r in scored_routes), default=1) or 1
+
+    for route in scored_routes:
+        norm_d = route["distance_m"] / max_d
+        norm_t = route["duration_s"] / max_t
+        norm_r = route["avg_risk"] / max_r
+        route["safewalk_cost"] = round(0.20 * norm_d + 0.20 * norm_t + 0.60 * norm_r, 4)
+
     objective_key = {
         "distance": "distance_m",
         "time": "duration_s",
         "cost": "cost_estimate_inr",
         "risk": "avg_risk",
+        "safewalk": "safewalk_cost",
     }[req.optimization_objective]
+
     # PathRak's stable Merge Sort ranks route candidates. The routing service
     # supplied geometry only; it did not perform this local route ranking.
     for route in scored_routes:

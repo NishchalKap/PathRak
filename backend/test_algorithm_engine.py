@@ -7,12 +7,21 @@ from algorithm_engine import (
     binary_search,
     dfs,
     dijkstra,
+    fractional_knapsack,
+    graph_coloring,
     heap_sort,
     kruskal,
+    lcs,
+    lis,
+    matrix_chain_order,
     merge_sort,
+    min_max_dc,
+    n_queens,
     optimize_projects,
     prim,
     quick_sort,
+    record_dijkstra_trace,
+    record_kruskal_trace,
     synthetic_graph,
 )
 
@@ -163,6 +172,93 @@ class AlgorithmEngineTests(unittest.TestCase):
 
     def test_synthetic_graph_is_repeatable(self):
         self.assertEqual(synthetic_graph(10, 0.3, 7), synthetic_graph(10, 0.3, 7))
+
+    def test_min_max_dc(self):
+        arr = [3, 9, -2, 14, 0, 8, 22, -10]
+        min_v, max_v, comps = min_max_dc(arr)
+        self.assertEqual(min_v, -10)
+        self.assertEqual(max_v, 22)
+        self.assertLess(comps, 2 * len(arr))
+
+    def test_fractional_knapsack(self):
+        items = [
+            {"name": "gold", "weight": 10, "value": 60},    # ratio 6
+            {"name": "silver", "weight": 20, "value": 100}, # ratio 5
+            {"name": "bronze", "weight": 30, "value": 120}, # ratio 4
+        ]
+        # Capacity 50: take gold (10, 60), silver (20, 100), and 20/30 of bronze (20, 80) -> 240
+        res = fractional_knapsack(items, 50)
+        self.assertEqual(res["total_value"], 240.0)
+        self.assertEqual(len(res["items_taken"]), 3)
+        self.assertAlmostEqual(res["items_taken"][2]["fraction"], 2/3, places=2)
+
+    def test_lcs(self):
+        res = lcs("ABCBDAB", "BDCAB")
+        self.assertEqual(res["length"], 4)
+        self.assertIn(res["sequence"], ["BCAB", "BDAB"])
+
+    def test_lis(self):
+        res = lis([10, 22, 9, 33, 21, 50, 41, 60, 80])
+        self.assertEqual(res["length"], 6)
+        self.assertEqual(res["sequence"], [10, 22, 33, 50, 60, 80])
+
+    def test_matrix_chain_order(self):
+        # Dimensions: 10x20, 20x30, 30x40
+        res = matrix_chain_order([10, 20, 30, 40])
+        # Optimal parenthesization: ((A1 x A2) x A3) -> 10*20*30 + 10*30*40 = 6000 + 12000 = 18000
+        self.assertEqual(res["min_multiplications"], 18000)
+        self.assertIn("A1", res["optimal_parenthesization"])
+
+    def test_graph_coloring(self):
+        # 3-cycle triangle needs 3 colors, cannot be colored with 2
+        nodes = ["A", "B", "C"]
+        edges = [
+            {"source": "A", "target": "B"},
+            {"source": "B", "target": "C"},
+            {"source": "A", "target": "C"},
+        ]
+        fail_res = graph_coloring(nodes, edges, max_colors=2)
+        self.assertFalse(fail_res["colorable"])
+        pass_res = graph_coloring(nodes, edges, max_colors=3)
+        self.assertTrue(pass_res["colorable"])
+        self.assertEqual(len(pass_res["assigned_colors"]), 3)
+
+    def test_n_queens(self):
+        res4 = n_queens(4)
+        self.assertTrue(res4["solution_found"])
+        self.assertEqual(len(res4["board_positions"]), 4)
+        # Check no two queens attack
+        board = res4["board_positions"]
+        for r1 in range(4):
+            for r2 in range(r1 + 1, 4):
+                self.assertNotEqual(board[r1], board[r2])
+                self.assertNotEqual(abs(board[r1] - board[r2]), abs(r1 - r2))
+
+    def test_dijkstra_trace_recording(self):
+        trace = record_dijkstra_trace(NODES, EDGES, "A", "D", "distance")
+        self.assertEqual(trace["algorithm"], "Dijkstra")
+        self.assertTrue(trace["reachable"])
+        self.assertEqual(trace["final_path"], ["A", "B", "C", "D"])
+        self.assertEqual(trace["total_cost"], 4.0)
+        self.assertGreater(trace["total_steps"], 5)
+        # Check event structure
+        first_event = trace["events"][0]
+        self.assertEqual(first_event["event_type"], "INITIALIZE")
+        self.assertIn("distances", first_event)
+        self.assertIn("predecessors", first_event)
+        last_event = trace["events"][-1]
+        self.assertEqual(last_event["event_type"], "COMPLETE")
+
+    def test_kruskal_trace_recording(self):
+        trace = record_kruskal_trace(NODES, EDGES, "cost")
+        self.assertEqual(trace["algorithm"], "Kruskal")
+        self.assertEqual(trace["total_cost"], 4.0)
+        self.assertEqual(len(trace["selected_edges"]), 3)
+        self.assertGreater(trace["total_steps"], 3)
+        first_event = trace["events"][0]
+        self.assertEqual(first_event["event_type"], "INITIALIZE")
+        last_event = trace["events"][-1]
+        self.assertEqual(last_event["event_type"], "COMPLETE")
 
 
 if __name__ == "__main__":

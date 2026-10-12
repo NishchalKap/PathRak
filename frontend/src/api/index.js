@@ -108,3 +108,13 @@ export const runBenchmark = (payload) => api("/api/algorithms/benchmark", "POST"
 export const generateSyntheticGraph = (payload) => api("/api/algorithms/synthetic-graph", "POST", payload);
 export const runSort = (payload) => api("/api/algorithms/sort", "POST", payload);
 export const runBinarySearch = (payload) => api("/api/algorithms/binary-search", "POST", payload);
+
+export const getDijkstraTrace = (payload) => api("/api/algorithms/trace/dijkstra", "POST", payload);
+export const getKruskalTrace = (payload) => api("/api/algorithms/trace/kruskal", "POST", payload);
+export const runMinMax = (payload) => api("/api/algorithms/min-max", "POST", payload);
+export const runFractionalKnapsack = (payload) => api("/api/algorithms/fractional-knapsack", "POST", payload);
+export const runLcs = (payload) => api("/api/algorithms/lcs", "POST", payload);
+export const runLis = (payload) => api("/api/algorithms/lis", "POST", payload);
+export const runMatrixChain = (payload) => api("/api/algorithms/matrix-chain", "POST", payload);
+export const runGraphColoring = (payload) => api("/api/algorithms/graph-coloring", "POST", payload);
+export const runNQueens = (payload) => api("/api/algorithms/n-queens", "POST", payload);
