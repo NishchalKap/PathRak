@@ -7,6 +7,7 @@ import Icon from "../components/Icon";
 import { Notice, PageHeader, StatusPill, Metric } from "../components/UI";
 import MapTiles from "../components/MapTiles";
 import MapLayoutResizer from "../components/MapLayoutResizer";
+import DaaGraphVisualizer from "../components/DaaGraphVisualizer";
 import "leaflet/dist/leaflet.css";
 
 const scoreStyle = (score) => {
@@ -217,6 +218,7 @@ export default function RoutePage({ currentPos, theme, onStartSafeWalk, appConfi
   const [mapPickMode, setMapPickMode] = useState(null); // "start" | "end" | null
   const [dijkstraResult, setDijkstraResult] = useState(null);
   const [dijkstraLoading, setDijkstraLoading] = useState(false);
+  const [showAlgorithmStudio, setShowAlgorithmStudio] = useState(false);
   const [animIndex, setAnimIndex] = useState(0);
   const [isSimulating, setIsSimulating] = useState(false);
 
@@ -767,15 +769,24 @@ export default function RoutePage({ currentPos, theme, onStartSafeWalk, appConfi
                   {chosenRoute.bounded_algorithm_graph && (
                     <div className="panel bg-surface-subtle p-3 my-3 rounded-lg border border-line">
                       <div className="flex items-center justify-between mb-2">
-                        <strong className="text-sm">DAA Dijkstra Route Graph Analysis</strong>
-                        <button
-                          type="button"
-                          className="btn btn-xs btn-secondary"
-                          onClick={executeDijkstraOnRoute}
-                          disabled={dijkstraLoading}
-                        >
-                          {dijkstraLoading ? "Running Dijkstra..." : "Run Dijkstra on Route Graph"}
-                        </button>
+                        <strong className="text-sm">DAA Route Graph Algorithm Integration</strong>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            className="btn btn-xs btn-secondary"
+                            onClick={executeDijkstraOnRoute}
+                            disabled={dijkstraLoading}
+                          >
+                            {dijkstraLoading ? "Running Dijkstra..." : "Run Fast Dijkstra"}
+                          </button>
+                          <button
+                            type="button"
+                            className={`btn btn-xs ${showAlgorithmStudio ? "btn-primary" : "btn-secondary"}`}
+                            onClick={() => setShowAlgorithmStudio(!showAlgorithmStudio)}
+                          >
+                            {showAlgorithmStudio ? "Hide Trace Visualizer" : "Explain Step-by-Step Trace"}
+                          </button>
+                        </div>
                       </div>
                       <p className="text-xs text-ink-soft mb-2">
                         {chosenRoute.bounded_algorithm_graph.scope}
@@ -792,6 +803,22 @@ export default function RoutePage({ currentPos, theme, onStartSafeWalk, appConfi
                           <p className="text-ink-soft">
                             Vertices processed: {dijkstraResult.nodes_processed} | Total distance: {(dijkstraResult.total_weight / 1000).toFixed(2)} km
                           </p>
+                        </div>
+                      )}
+
+                      {/* Expandable Step-by-Step Visualizer connected directly to this route's bounded graph */}
+                      {showAlgorithmStudio && (
+                        <div className="mt-3 pt-3 border-t border-line">
+                          <DaaGraphVisualizer
+                            customGraph={{
+                              name: `Route Candidate Graph (${start?.name?.split(",")[0]} → ${end?.name?.split(",")[0]})`,
+                              nodes: chosenRoute.bounded_algorithm_graph.nodes,
+                              edges: chosenRoute.bounded_algorithm_graph.edges,
+                              start: chosenRoute.bounded_algorithm_graph.nodes[0],
+                              target: chosenRoute.bounded_algorithm_graph.nodes[chosenRoute.bounded_algorithm_graph.nodes.length - 1],
+                            }}
+                            initialAlgorithm="dijkstra"
+                          />
                         </div>
                       )}
                     </div>

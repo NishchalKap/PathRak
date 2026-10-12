@@ -12,6 +12,7 @@ import {
   runNQueens,
 } from "../api";
 import { Metric, Notice, PageHeader } from "../components/UI";
+import DaaGraphVisualizer from "../components/DaaGraphVisualizer";
 
 const GRAPH_ALGORITHMS = [
   { id: "bfs", label: "Breadth-First Search (BFS)", category: "Traversal" },
@@ -29,7 +30,7 @@ const SEQUENCE_ALGORITHMS = [
 ];
 
 export default function AlgorithmAnalyzerPage() {
-  const [activeTab, setActiveTab] = useState("benchmark"); // "benchmark" | "sandbox" | "syllabus"
+  const [activeTab, setActiveTab] = useState("studio"); // "studio" | "benchmark" | "sandbox" | "syllabus"
   
   // Benchmark state
   const [selectedAlgo, setSelectedAlgo] = useState("dijkstra");
@@ -145,7 +146,14 @@ export default function AlgorithmAnalyzerPage() {
       />
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-line pb-2 mb-4">
+      <div className="flex gap-2 border-b border-line pb-2 mb-4 flex-wrap">
+        <button
+          type="button"
+          className={`btn btn-sm ${activeTab === "studio" ? "btn-primary" : "btn-secondary"}`}
+          onClick={() => setActiveTab("studio")}
+        >
+          DAA Algorithm Studio (Visualizer)
+        </button>
         <button
           type="button"
           className={`btn btn-sm ${activeTab === "benchmark" ? "btn-primary" : "btn-secondary"}`}
@@ -169,7 +177,11 @@ export default function AlgorithmAnalyzerPage() {
         </button>
       </div>
 
-      {activeTab === "benchmark" ? (
+      {activeTab === "studio" ? (
+        <section className="space-y-4">
+          <DaaGraphVisualizer />
+        </section>
+      ) : activeTab === "benchmark" ? (
         <>
           <section className="panel algorithm-controls">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-2">
@@ -658,6 +670,63 @@ export default function AlgorithmAnalyzerPage() {
           </div>
         </section>
       )}
+
+      {/* DAA Concepts & Faculty Demonstration Accordion/Card */}
+      <section className="panel faculty-guide mt-6 border-t border-line pt-4 bg-surface-subtle p-4 rounded-xl">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-brand" />
+          <h3 className="text-sm font-bold text-ink">
+            DAA Concepts & Faculty Demonstration Reference
+          </h3>
+        </div>
+        <p className="text-xs text-ink-soft mb-4">
+          Academic syllabus alignment mapping theoretical paradigms to real PathRak safety components.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+          <div className="p-3 bg-surface rounded-lg border border-line">
+            <span className="font-bold text-brand block mb-1">1. Greedy Paradigm (CLRS Ch 16, 23, 24)</span>
+            <p className="text-ink-soft">
+              <strong>Dijkstra:</strong> Extracts min-distance vertex from binary heap in \(O((V + E) \log V)\) time. Non-negative edge weights invariant.
+            </p>
+            <p className="text-ink-soft mt-1">
+              <strong>Kruskal:</strong> Greedy edge selection sorted by weight using Disjoint Set Union (DSU) with union by rank and path compression in \(O(E \log E)\).
+            </p>
+          </div>
+
+          <div className="p-3 bg-surface rounded-lg border border-line">
+            <span className="font-bold text-brand block mb-1">2. Divide & Conquer (CLRS Ch 2, 4, 9)</span>
+            <p className="text-ink-soft">
+              <strong>Merge Sort:</strong> Divide array at midpoint, conquer subproblems recursively, stable linear merge. Guaranteed \(O(N \log N)\) used to rank multi-objective candidate routes.
+            </p>
+            <p className="text-ink-soft mt-1">
+              <strong>Min-Max:</strong> Solves simultaneously in \(\lceil 3N/2 \rceil - 2\) comparisons.
+            </p>
+          </div>
+
+          <div className="p-3 bg-surface rounded-lg border border-line">
+            <span className="font-bold text-brand block mb-1">3. Dynamic Programming & Backtracking</span>
+            <p className="text-ink-soft">
+              <strong>DP:</strong> Matrix Chain Multiplication (\(O(n^3)\)), 0/1 Knapsack (\(O(n \cdot W)\)), Longest Common Subsequence (\(O(m \cdot n)\)).
+            </p>
+            <p className="text-ink-soft mt-1">
+              <strong>Backtracking:</strong> N-Queens and Graph 3-Coloring prune non-viable subtrees via explicit safety constraints.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-3 p-3 bg-surface rounded-lg border border-line text-xs">
+          <strong className="text-ink block mb-1">
+            PathRak Multi-Objective SafeWalk Cost Objective Function:
+          </strong>
+          <code className="text-brand font-mono text-[11px] block bg-surface-subtle p-2 rounded border border-line">
+            Cost(Route) = α · (Distance / Max_D) + β · (Duration / Max_T) + γ · (Risk / Max_R)
+          </code>
+          <p className="text-ink-soft mt-1 text-[11px]">
+            Where \(\alpha = 0.20\), \(\beta = 0.20\), and \(\gamma = 0.60\) (60% priority on minimizing pedestrian hazard exposure).
+          </p>
+        </div>
+      </section>
     </div>
   );
 }
