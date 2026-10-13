@@ -5,7 +5,7 @@ import Icon from "./Icon";
 const PSEUDOCODE = {
   dijkstra: [
     { line: 1, text: "def Dijkstra(G, s, t):", desc: "Initialize single-source shortest path" },
-    { line: 2, text: "  dist[v] = ∞ for all v ∈ V; dist[s] = 0", desc: "Start vertex has distance 0, others ∞" },
+    { line: 2, text: "  dist[v] = inf for all v in V; dist[s] = 0", desc: "Start vertex has distance 0, others inf" },
     { line: 3, text: "  PQ.insert((0, s))", desc: "Insert start into min-priority queue" },
     { line: 4, text: "  while PQ is not empty:", desc: "Extract minimum tentative distance vertex" },
     { line: 5, text: "    u = PQ.extract_min()", desc: "Finalize shortest path to u" },
@@ -17,14 +17,14 @@ const PSEUDOCODE = {
   ],
   kruskal: [
     { line: 1, text: "def Kruskal(G):", desc: "Initialize Minimum Spanning Tree" },
-    { line: 2, text: "  A = ∅", desc: "A holds the growing MST forest" },
-    { line: 3, text: "  for each v ∈ V: Make-Set(v)", desc: "Initialize Disjoint Set Union (DSU) partitions" },
+    { line: 2, text: "  A = empty set", desc: "A holds the growing MST forest" },
+    { line: 3, text: "  for each v in V: Make-Set(v)", desc: "Initialize Disjoint Set Union (DSU) partitions" },
     { line: 4, text: "  sort edges E in non-decreasing order by weight", desc: "Greedy ordering O(E log E)" },
     { line: 5, text: "  for each edge (u, v) in sorted E:", desc: "Inspect edge with minimum available weight" },
-    { line: 6, text: "    if Find-Set(u) ≠ Find-Set(v):", desc: "Cycle detection via representative roots" },
-    { line: 7, text: "      A = A ∪ {(u, v)}", desc: "Accept edge into MST" },
+    { line: 6, text: "    if Find-Set(u) != Find-Set(v):", desc: "Cycle detection via representative roots" },
+    { line: 7, text: "      A = A union {(u, v)}", desc: "Accept edge into MST" },
     { line: 8, text: "      Union(u, v)", desc: "Merge disjoint components" },
-    { line: 9, text: "  return A", desc: "Spanning tree / forest complete" },
+    { line: 9, text: "  return A", desc: "Spanning tree complete" },
   ],
 };
 
@@ -33,12 +33,12 @@ const SAMPLE_BENCHMARK_GRAPHS = {
     name: "Bengaluru Safety Corridor (Demo)",
     nodes: ["MG_Road", "Cubbon", "Brigade", "Residency", "Indiranagar", "Koramangala"],
     positions: {
-      MG_Road: { x: 90, y: 190 },
-      Cubbon: { x: 230, y: 100 },
-      Brigade: { x: 210, y: 280 },
-      Residency: { x: 370, y: 240 },
-      Indiranagar: { x: 380, y: 100 },
-      Koramangala: { x: 510, y: 190 },
+      MG_Road: { x: 70, y: 190 },
+      Cubbon: { x: 210, y: 80 },
+      Brigade: { x: 210, y: 300 },
+      Residency: { x: 370, y: 260 },
+      Indiranagar: { x: 390, y: 80 },
+      Koramangala: { x: 530, y: 190 },
     },
     edges: [
       { source: "MG_Road", target: "Cubbon", distance: 2.5, cost: 2.5, time: 6, risk: 2 },
@@ -56,12 +56,12 @@ const SAMPLE_BENCHMARK_GRAPHS = {
     name: "Multi-Route Mesh Topology",
     nodes: ["V1", "V2", "V3", "V4", "V5", "V6"],
     positions: {
-      V1: { x: 90, y: 120 },
-      V2: { x: 280, y: 90 },
-      V3: { x: 480, y: 110 },
-      V4: { x: 110, y: 280 },
-      V5: { x: 290, y: 300 },
-      V6: { x: 490, y: 270 },
+      V1: { x: 80, y: 100 },
+      V2: { x: 290, y: 80 },
+      V3: { x: 500, y: 100 },
+      V4: { x: 100, y: 290 },
+      V5: { x: 300, y: 310 },
+      V6: { x: 510, y: 280 },
     },
     edges: [
       { source: "V1", target: "V2", distance: 4.0, cost: 4.0, time: 8, risk: 2 },
@@ -93,16 +93,16 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
   // Active graph selection: prefer customGraph if passed (e.g. from RoutePage), else sample graph
   const activeGraph = customGraph || SAMPLE_BENCHMARK_GRAPHS[selectedGraphKey];
 
-  // Auto-generate positions in an elliptical ring if positions are not provided
+  // Auto-generate clean positions in an elliptical ring if positions are not provided
   const nodePositions = React.useMemo(() => {
     if (activeGraph.positions) return activeGraph.positions;
     const nodes = activeGraph.nodes || [];
     const positions = {};
     const count = nodes.length;
     const cx = 300;
-    const cy = 200;
+    const cy = 190;
     const rx = 220;
-    const ry = 130;
+    const ry = 120;
     nodes.forEach((n, idx) => {
       const angle = (idx / count) * 2 * Math.PI - Math.PI / 2;
       positions[n] = {
@@ -144,7 +144,7 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
         setTraceData(data);
       }
     } catch (err) {
-      console.error("Failed to load DAA trace:", err);
+      console.error("Failed to load algorithm trace:", err);
       setError(err.message || "Failed to generate algorithm trace.");
       setTraceData(null);
     } finally {
@@ -219,7 +219,6 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
     const v = edge.target;
 
     if (algorithm === "dijkstra") {
-      // Check if this edge is the one currently examined/relaxed
       if (
         currentEvent.edge &&
         ((currentEvent.edge.source === u && currentEvent.edge.target === v) ||
@@ -227,8 +226,7 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
       ) {
         return currentEvent.event_type === "RELAX" ? "relaxed" : "examined";
       }
-      // Check if this edge is on the final path if completed
-      if (currentEvent.event_type === "COMPLETE" && traceData.final_path) {
+      if (currentEvent.event_type === "COMPLETE" && traceData?.final_path) {
         for (let i = 0; i < traceData.final_path.length - 1; i++) {
           const p1 = traceData.final_path[i];
           const p2 = traceData.final_path[i + 1];
@@ -236,7 +234,6 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
         }
       }
     } else if (algorithm === "kruskal") {
-      // Current edge examined
       if (
         currentEvent.edge &&
         ((currentEvent.edge.source === u && currentEvent.edge.target === v) ||
@@ -244,7 +241,6 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
       ) {
         return currentEvent.event_type === "ACCEPT_EDGE" ? "accepted" : "rejected";
       }
-      // Edges selected so far in the MST
       if (
         currentEvent.selected_edges?.some(
           (e) => (e.source === u && e.target === v) || (e.source === v && e.target === u)
@@ -257,19 +253,19 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
   };
 
   return (
-    <div className="daa-visualizer-container border border-line rounded-xl bg-surface p-4 shadow-sm space-y-4">
+    <div className="border border-line rounded-xl bg-surface p-4 shadow-sm space-y-4">
       {/* Header & Controls Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-3">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-brand-soft flex items-center justify-center text-brand font-bold text-sm">
-            DAA
+          <div className="w-8 h-8 rounded-lg bg-brand-soft flex items-center justify-center text-brand">
+            <Icon name="route" size={18} />
           </div>
           <div>
             <h3 className="text-sm font-bold text-ink">
-              Native Algorithm Studio · Step-by-Step Execution
+              Algorithm Execution Studio
             </h3>
             <p className="text-xs text-ink-soft">
-              Interactive visualization embedded natively in PathRak with teal/mint design tokens.
+              Interactive trace visualizer on graph corridors and network topologies.
             </p>
           </div>
         </div>
@@ -322,8 +318,15 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
       </div>
 
       {error && (
-        <div className="p-3 bg-danger-soft text-danger text-xs rounded-lg border border-line">
-          {error}
+        <div className="flex items-center justify-between p-3 bg-danger-soft text-danger text-xs rounded-lg border border-line">
+          <span>{error}</span>
+          <button
+            type="button"
+            className="btn btn-xs btn-secondary"
+            onClick={loadTrace}
+          >
+            Retry
+          </button>
         </div>
       )}
 
@@ -345,24 +348,10 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
             {loading ? (
               <div className="flex flex-col items-center gap-2 text-xs text-ink-soft">
                 <span className="animate-spin w-5 h-5 border-2 border-brand border-t-transparent rounded-full" />
-                <span>Computing deterministic trace...</span>
+                <span>Computing execution trace...</span>
               </div>
             ) : (
-              <svg viewBox="0 0 600 400" className="w-full h-full select-none">
-                <defs>
-                  <marker
-                    id="arrow"
-                    viewBox="0 0 10 10"
-                    refX="22"
-                    refY="5"
-                    markerWidth="6"
-                    markerHeight="6"
-                    orient="auto-start-reverse"
-                  >
-                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#75847f" />
-                  </marker>
-                </defs>
-
+              <svg viewBox="0 0 600 380" className="w-full h-full select-none">
                 {/* Edges */}
                 {activeGraph.edges.map((e, idx) => {
                   const p1 = nodePositions[e.source] || { x: 50, y: 50 };
@@ -408,9 +397,9 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
                       />
                       {/* Edge Weight Label */}
                       <rect
-                        x={mx - 14}
+                        x={mx - 15}
                         y={my - 9}
-                        width={28}
+                        width={30}
                         height={18}
                         rx={4}
                         fill="#ffffff"
@@ -432,23 +421,23 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
                   );
                 })}
 
-                {/* Nodes */}
+                {/* Nodes rendered on top of edges */}
                 {activeGraph.nodes.map((nodeId) => {
                   const pos = nodePositions[nodeId] || { x: 50, y: 50 };
                   const state = getNodeState(nodeId);
                   const distVal = currentEvent?.distances?.[nodeId];
-                  const distDisplay = distVal === Infinity || distVal === undefined ? "∞" : distVal.toFixed(1);
+                  const distDisplay = distVal === null || distVal === undefined ? "inf" : distVal.toFixed(1);
 
                   let fillColor = "#ffffff";
                   let strokeColor = "#75847f";
                   let textColor = "#10201c";
-                  let radius = 18;
+                  let radius = 22;
 
                   if (state === "current") {
                     fillColor = "#dff4ee"; // brand soft
                     strokeColor = "#087f6d"; // brand teal
                     textColor = "#056555";
-                    radius = 21;
+                    radius = 24;
                   } else if (state === "finalized") {
                     fillColor = "#e1f5ec"; // safe soft
                     strokeColor = "#11875d"; // safe emerald
@@ -462,8 +451,10 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
                     strokeColor = "#087f6d";
                   }
 
+                  const cleanLabel = nodeId.replace(/_/g, " ");
+
                   return (
-                    <g key={`node-${nodeId}`} className="cursor-pointer transition-all duration-300">
+                    <g key={`node-${nodeId}`} className="transition-all duration-300">
                       <circle
                         cx={pos.x}
                         cy={pos.y}
@@ -477,20 +468,20 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
                         x={pos.x}
                         y={pos.y + 4}
                         textAnchor="middle"
-                        fontSize={10.5}
+                        fontSize={cleanLabel.length > 8 ? 9 : 10.5}
                         fontWeight="700"
                         fill={textColor}
                       >
-                        {nodeId.length > 5 ? nodeId.slice(0, 4) : nodeId}
+                        {cleanLabel.length > 10 ? cleanLabel.slice(0, 9) + "…" : cleanLabel}
                       </text>
 
                       {/* Tentative Distance Badge above node */}
                       {algorithm === "dijkstra" && currentEvent?.distances && (
                         <g>
                           <rect
-                            x={pos.x - 16}
+                            x={pos.x - 20}
                             y={pos.y - radius - 15}
-                            width={32}
+                            width={40}
                             height={14}
                             rx={4}
                             fill="#10201c"
@@ -581,7 +572,7 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
                 onClick={() => setCurrentStepIndex((prev) => Math.max(0, prev - 1))}
                 disabled={currentStepIndex === 0 || totalSteps === 0}
               >
-                ◄ Prev
+                Prev
               </button>
               <button
                 type="button"
@@ -589,7 +580,7 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
                 onClick={() => setIsPlaying(!isPlaying)}
                 disabled={totalSteps === 0}
               >
-                {isPlaying ? "Pause ❚❚" : "Play ▶"}
+                {isPlaying ? "Pause" : "Play"}
               </button>
               <button
                 type="button"
@@ -597,7 +588,7 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
                 onClick={() => setCurrentStepIndex((prev) => Math.min(totalSteps - 1, prev + 1))}
                 disabled={currentStepIndex >= totalSteps - 1 || totalSteps === 0}
               >
-                Next ►
+                Next
               </button>
 
               <select
@@ -605,9 +596,9 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
                 value={playbackSpeed}
                 onChange={(e) => setPlaybackSpeed(Number(e.target.value))}
               >
-                <option value={1800}>0.5x Slow</option>
-                <option value={1200}>1.0x Normal</option>
-                <option value={600}>2.0x Fast</option>
+                <option value={1800}>0.5x</option>
+                <option value={1200}>1.0x</option>
+                <option value={600}>2.0x</option>
               </select>
             </div>
           </div>
@@ -615,15 +606,27 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
           {/* Step Explanation Card */}
           <div className="p-3 bg-surface border border-line rounded-xl shadow-xs space-y-1.5">
             <h4 className="text-xs font-bold text-ink uppercase tracking-wider">
-              Algorithm Invariant & Decision
+              Step Decision & State
             </h4>
             <p className="text-xs text-ink-soft leading-relaxed min-h-[38px]">
               {currentEvent?.explanation ||
-                "Select algorithm and step through the execution trace to observe priority queue mutations and edge relaxations."}
+                "Select algorithm and step through the execution trace to observe state changes."}
             </p>
 
+            {/* Final Path or MST Result if complete */}
+            {currentEvent?.event_type === "COMPLETE" && (
+              <div className="pt-2 border-t border-line text-xs font-semibold text-safe">
+                {algorithm === "dijkstra" && traceData?.final_path && (
+                  <p>Path: {traceData.final_path.join(" -> ")} | Cost: {traceData.total_cost ?? "inf"}</p>
+                )}
+                {algorithm === "kruskal" && traceData?.selected_edges && (
+                  <p>MST Edges: {traceData.selected_edges.length} | Cost: {traceData.total_cost ?? 0}</p>
+                )}
+              </div>
+            )}
+
             {/* Priority Queue / Disjoint Components Snapshot */}
-            {algorithm === "dijkstra" && currentEvent?.priority_queue && (
+            {algorithm === "dijkstra" && currentEvent?.priority_queue && currentEvent.event_type !== "COMPLETE" && (
               <div className="pt-2 border-t border-line text-[11px]">
                 <strong className="text-ink-soft block mb-1">
                   Min-Priority Queue: [dist, vertex]
@@ -644,10 +647,10 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
               </div>
             )}
 
-            {algorithm === "kruskal" && currentEvent?.dsu_components && (
+            {algorithm === "kruskal" && currentEvent?.dsu_components && currentEvent.event_type !== "COMPLETE" && (
               <div className="pt-2 border-t border-line text-[11px]">
                 <strong className="text-ink-soft block mb-1">
-                  DSU Disjoint Forest Components:
+                  Disjoint Forest Components:
                 </strong>
                 <div className="flex gap-1.5 flex-wrap">
                   {currentEvent.dsu_components.map((comp, idx) => (
@@ -667,9 +670,9 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
           <div className="p-3 bg-surface-subtle border border-line rounded-xl space-y-1.5 font-mono text-[11px] overflow-hidden">
             <div className="flex items-center justify-between text-[10px] text-ink-faint font-sans pb-1 border-b border-line">
               <span className="font-semibold text-ink-soft">
-                CLRS Pseudocode · {algorithm === "dijkstra" ? "Chapter 24.3" : "Chapter 23.2"}
+                Pseudocode ({algorithm.toUpperCase()})
               </span>
-              <span>O({algorithm === "dijkstra" ? "(V + E) log V" : "E log E"})</span>
+              <span>{algorithm === "dijkstra" ? "O((V + E) log V)" : "O(E log E)"}</span>
             </div>
             <div className="space-y-0.5 overflow-x-auto max-h-[140px] pt-1">
               {(PSEUDOCODE[algorithm] || []).map((line) => {
@@ -686,7 +689,7 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
                     <span>{line.text}</span>
                     {isHighlighted && (
                       <span className="text-[9px] font-sans opacity-90 ml-2 hidden sm:inline">
-                        ◄ executing
+                        active
                       </span>
                     )}
                   </div>

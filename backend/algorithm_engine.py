@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from heapq import heappop, heappush
+import math
 from random import Random
 from time import perf_counter
 from typing import Any, Iterable, List, Optional
@@ -958,13 +959,16 @@ def record_dijkstra_trace(
     pq: list[tuple[float, str]] = [(0.0, start_s)]
     finalized: set[str] = set()
 
+    def _json_safe_distances(d_map: dict[str, float]) -> dict[str, Optional[float]]:
+        return {k: (None if math.isinf(v) else round(v, 4)) for k, v in d_map.items()}
+
     step_num += 1
     events.append({
         "step": step_num,
         "event_type": "INITIALIZE",
         "current_vertex": start_s,
         "edge": None,
-        "distances": dict(distances),
+        "distances": _json_safe_distances(distances),
         "predecessors": dict(predecessors),
         "priority_queue": list(pq),
         "finalized": list(finalized),
@@ -983,7 +987,7 @@ def record_dijkstra_trace(
             "event_type": "POP_MIN",
             "current_vertex": curr,
             "edge": None,
-            "distances": dict(distances),
+            "distances": _json_safe_distances(distances),
             "predecessors": dict(predecessors),
             "priority_queue": list(pq),
             "finalized": list(finalized),
@@ -1002,7 +1006,7 @@ def record_dijkstra_trace(
                 "event_type": "EXAMINE_EDGE",
                 "current_vertex": curr,
                 "edge": {"source": curr, "target": neighbour, "weight": w},
-                "distances": dict(distances),
+                "distances": _json_safe_distances(distances),
                 "predecessors": dict(predecessors),
                 "priority_queue": list(pq),
                 "finalized": list(finalized),
@@ -1020,7 +1024,7 @@ def record_dijkstra_trace(
                     "event_type": "RELAX",
                     "current_vertex": curr,
                     "edge": {"source": curr, "target": neighbour, "weight": w},
-                    "distances": dict(distances),
+                    "distances": _json_safe_distances(distances),
                     "predecessors": dict(predecessors),
                     "priority_queue": list(pq),
                     "finalized": list(finalized),
@@ -1034,13 +1038,13 @@ def record_dijkstra_trace(
         "event_type": "COMPLETE",
         "current_vertex": target_s if reached else None,
         "edge": None,
-        "distances": dict(distances),
+        "distances": _json_safe_distances(distances),
         "predecessors": dict(predecessors),
         "priority_queue": list(pq),
         "finalized": list(finalized),
         "final_path": path,
-        "total_cost": distances[target_s] if reached else None,
-        "explanation": f"Algorithm finished. Optimal path: {' -> '.join(path) if path else 'Unreachable'} (Cost: {distances[target_s] if reached else '∞'}).",
+        "total_cost": None if (not reached or math.isinf(distances[target_s])) else round(distances[target_s], 4),
+        "explanation": f"Algorithm finished. Optimal path: {' -> '.join(path) if path else 'Unreachable'} (Cost: {round(distances[target_s], 2) if reached and not math.isinf(distances[target_s]) else '∞'}).",
     })
 
     return {

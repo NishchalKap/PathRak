@@ -248,9 +248,10 @@ export default function RoutePage({ currentPos, theme, onStartSafeWalk, appConfi
     });
   }, [currentPos, startEdited]);
 
-  const handleFind = async (customStart = null, customEnd = null) => {
+  const handleFind = async (customStart = null, customEnd = null, customObjective = null) => {
     const s = customStart || start;
     const e = customEnd || end;
+    const obj = customObjective || objective;
     if (!s || !e) {
       setError("Set both a start and destination before finding a route.");
       return;
@@ -268,7 +269,7 @@ export default function RoutePage({ currentPos, theme, onStartSafeWalk, appConfi
         [{ lat: s.lat, lng: s.lng }, { lat: e.lat, lng: e.lng }],
         hour,
         getBackendWeekday(),
-        objective
+        obj
       );
       if (!data.routes || data.routes.length === 0) {
         throw new Error("No routes found between these locations.");
@@ -485,7 +486,14 @@ export default function RoutePage({ currentPos, theme, onStartSafeWalk, appConfi
             id="route-objective"
             className="input"
             value={objective}
-            onChange={(event) => setObjective(event.target.value)}
+            onChange={(event) => {
+              const newObj = event.target.value;
+              setObjective(newObj);
+              if (start && end && routes.length > 0) {
+                // Auto-recalculate with newly selected objective
+                setTimeout(() => handleFind(start, end, newObj), 0);
+              }
+            }}
           >
             <option value="safewalk">SafeWalk (Weighted Multi-Objective Cost)</option>
             <option value="risk">Lowest observed risk</option>

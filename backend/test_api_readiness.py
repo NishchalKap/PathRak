@@ -146,6 +146,50 @@ class ApiReadinessTests(unittest.TestCase):
         self.assertEqual(payload["routes"][0]["coordinates"][0], [12.9755, 77.6069])
         self.assertGreaterEqual(payload["routes"][0]["score"], 0)
 
+    def test_dijkstra_trace_endpoint_json_serialization(self):
+        payload = {
+            "nodes": ["A", "B", "C", "D"],
+            "edges": [
+                {"source": "A", "target": "B", "distance": 2.0},
+                {"source": "B", "target": "C", "distance": 3.0},
+                {"source": "C", "target": "D", "distance": 1.0},
+                {"source": "A", "target": "C", "distance": 6.0},
+            ],
+            "start": "A",
+            "target": "D",
+            "criterion": "distance",
+            "directed": False,
+        }
+        response = self.client.post("/api/algorithms/trace/dijkstra", json=payload)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["algorithm"], "Dijkstra")
+        self.assertTrue(data["reachable"])
+        self.assertEqual(data["final_path"], ["A", "B", "C", "D"])
+        self.assertGreater(data["total_steps"], 0)
+        # Verify JSON distances are valid floats/nulls and not crashing with 500 Out of range float
+        for event in data["events"]:
+            self.assertIn("distances", event)
+            for v, dist in event["distances"].items():
+                self.assertTrue(dist is None or isinstance(dist, (int, float)))
+
+    def test_kruskal_trace_endpoint(self):
+        payload = {
+            "nodes": ["A", "B", "C", "D"],
+            "edges": [
+                {"source": "A", "target": "B", "cost": 1.0},
+                {"source": "B", "target": "C", "cost": 2.0},
+                {"source": "C", "target": "D", "cost": 3.0},
+                {"source": "A", "target": "D", "cost": 5.0},
+            ],
+            "criterion": "cost",
+        }
+        response = self.client.post("/api/algorithms/trace/kruskal", json=payload)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["algorithm"], "Kruskal")
+        self.assertEqual(len(data["selected_edges"]), 3)
+
 
 if __name__ == "__main__":
     unittest.main()
