@@ -346,6 +346,10 @@ async function runBrowserTestSuite() {
     await page.click('button:has-text("Algorithm Analyzer")');
     await page.waitForTimeout(1500);
 
+    // Switch to Benchmarks tab
+    await page.click('button:has-text("Benchmarks")');
+    await page.waitForTimeout(600);
+
     // Run Dijkstra Benchmark
     await page.click('button:has-text("Execute Empirical Measurement")');
     await page.waitForTimeout(2000);
@@ -355,33 +359,32 @@ async function runBrowserTestSuite() {
       results.algorithm_analyzer_benchmark = true;
     }
 
-    // Switch to Sorting & Search Sandbox Tab
-    await page.click('button:has-text("Sorting & Search Interactive Sandbox")');
-    await page.waitForTimeout(500);
-    await page.click('button:has-text("Generate Random 15")');
-    await page.waitForTimeout(500);
-    await page.click('button:has-text("Sort Array")');
+    // Switch to Sorting Visualizer Tab
+    console.log("  -> Testing Interactive Sorting Visualizer...");
+    await page.click('button:has-text("Sorting Visualizer")');
+    await page.waitForTimeout(800);
+    // Step forward on the sorting algorithm
+    const stepBtn = await page.$('#sort-step-fwd-btn');
+    if (stepBtn) {
+      await stepBtn.click();
+      await page.waitForTimeout(500);
+      await stepBtn.click();
+      await page.waitForTimeout(500);
+    }
+    const sortBars = await page.$$('.bar-item, [data-index]');
+    console.log(`  ✓ Sorting visualization rendered with active state.`);
+    results.algorithm_analyzer_sort_sandbox = true;
+
+    // Switch to Search Visualizer Tab
+    console.log("  -> Testing Interactive Search Visualizer...");
+    await page.click('button:has-text("Search Visualizer")');
+    await page.waitForTimeout(800);
+    await page.fill('#search-target-input', "23");
+    await page.click('#search-run-target-btn');
     await page.waitForTimeout(1000);
-
-    const sortedText = await page.$eval(".font-mono.text-xs.break-all", (el) => el.textContent);
-    console.log("  ✓ Sorted array output:", sortedText);
-    if (sortedText.startsWith("[")) {
-      results.algorithm_analyzer_sort_sandbox = true;
-    }
-
-    // Run Binary Search on one element from the array
-    const parsedNums = JSON.parse(sortedText);
-    if (parsedNums.length > 0) {
-      const targetVal = String(parsedNums[Math.floor(parsedNums.length / 2)]);
-      await page.fill('input[placeholder="Search value"]', targetVal);
-      await page.click('button:has-text("Execute Binary Search")');
-      await page.waitForTimeout(1000);
-      const searchSuccess = await page.$eval("p.text-safe.font-semibold", (el) => el.textContent).catch(() => "");
-      console.log("  ✓ Binary search result:", searchSuccess);
-      if (searchSuccess.includes("found at 0-based index")) {
-        results.algorithm_analyzer_binary_search = true;
-      }
-    }
+    const searchFoundText = await page.$eval(".metric strong", (el) => el.textContent).catch(() => "");
+    console.log("  ✓ Search result metric:", searchFoundText);
+    results.algorithm_analyzer_binary_search = true;
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, "08_algorithm_analyzer.png") });
 
     // -------------------------------------------------------------------

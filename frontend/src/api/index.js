@@ -111,6 +111,11 @@ export const runBinarySearch = (payload) => api("/api/algorithms/binary-search",
 
 export const getDijkstraTrace = (payload) => api("/api/algorithms/trace/dijkstra", "POST", payload);
 export const getKruskalTrace = (payload) => api("/api/algorithms/trace/kruskal", "POST", payload);
+export const getPrimTrace = (payload) => api("/api/algorithms/trace/prim", "POST", payload);
+export const getBfsTrace = (payload) => api("/api/algorithms/trace/bfs", "POST", payload);
+export const getDfsTrace = (payload) => api("/api/algorithms/trace/dfs", "POST", payload);
+export const getSortTrace = (payload) => api("/api/algorithms/trace/sort", "POST", payload);
+export const getSearchTrace = (payload) => api("/api/algorithms/trace/search", "POST", payload);
 export const runMinMax = (payload) => api("/api/algorithms/min-max", "POST", payload);
 export const runFractionalKnapsack = (payload) => api("/api/algorithms/fractional-knapsack", "POST", payload);
 export const runLcs = (payload) => api("/api/algorithms/lcs", "POST", payload);

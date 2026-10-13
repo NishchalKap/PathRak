@@ -1,5 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
-import { getDijkstraTrace, getKruskalTrace } from "../api";
+import {
+  getDijkstraTrace,
+  getKruskalTrace,
+  getPrimTrace,
+  getBfsTrace,
+  getDfsTrace,
+} from "../api";
 import Icon from "./Icon";
 
 const PSEUDOCODE = {
@@ -15,6 +21,16 @@ const PSEUDOCODE = {
     { line: 9, text: "        dist[v] = dist[u] + w; prev[v] = u", desc: "Update tentative distance and predecessor" },
     { line: 10, text: "        PQ.decrease_key_or_push((dist[v], v))", desc: "Push relaxed distance into priority queue" },
   ],
+  prim: [
+    { line: 1, text: "def Prim(G, r):", desc: "Initialize Minimum Spanning Tree from root" },
+    { line: 2, text: "  visited = {r}; PQ = incident_edges(r)", desc: "Start tree with root vertex" },
+    { line: 3, text: "  while PQ not empty and |visited| < |V|:", desc: "Extract min-weight candidate cross edge" },
+    { line: 4, text: "    (u, v, w) = PQ.extract_min()", desc: "Greedy cut crossing edge" },
+    { line: 5, text: "    if v not in visited:", desc: "Check for tree cycle" },
+    { line: 6, text: "      visited.add(v); MST.add((u, v))", desc: "Accept safe edge into spanning tree" },
+    { line: 7, text: "      for edge (v, z) in incident(v): PQ.insert((v, z))", desc: "Add newly reachable candidate edges" },
+    { line: 8, text: "  return MST", desc: "Minimum Spanning Tree complete" },
+  ],
   kruskal: [
     { line: 1, text: "def Kruskal(G):", desc: "Initialize Minimum Spanning Tree" },
     { line: 2, text: "  A = empty set", desc: "A holds the growing MST forest" },
@@ -25,6 +41,26 @@ const PSEUDOCODE = {
     { line: 7, text: "      A = A union {(u, v)}", desc: "Accept edge into MST" },
     { line: 8, text: "      Union(u, v)", desc: "Merge disjoint components" },
     { line: 9, text: "  return A", desc: "Spanning tree complete" },
+  ],
+  bfs: [
+    { line: 1, text: "def BFS(G, s):", desc: "Breadth-First Search level order traversal" },
+    { line: 2, text: "  visited = {s}; Q.enqueue(s)", desc: "Initialize queue with source vertex" },
+    { line: 3, text: "  while Q is not empty:", desc: "Process vertices in order of discovery" },
+    { line: 4, text: "    u = Q.dequeue()", desc: "Visit front vertex" },
+    { line: 5, text: "    for each neighbor v of u:", desc: "Inspect incident edges" },
+    { line: 6, text: "      if v not in visited:", desc: "Check unvisited" },
+    { line: 7, text: "        visited.add(v); prev[v] = u; Q.enqueue(v)", desc: "Enqueue newly discovered vertex" },
+    { line: 8, text: "  return traversal_order", desc: "Breadth-first exploration complete" },
+  ],
+  dfs: [
+    { line: 1, text: "def DFS(G, s):", desc: "Depth-First Search recursive exploration" },
+    { line: 2, text: "  stack = [s]; visited = empty", desc: "Initialize stack with source vertex" },
+    { line: 3, text: "  while stack is not empty:", desc: "Explore branch depth" },
+    { line: 4, text: "    u = stack.pop()", desc: "Pop latest frontier vertex" },
+    { line: 5, text: "    if u not in visited: visited.add(u)", desc: "Mark vertex visited" },
+    { line: 6, text: "      for each neighbor v of u:", desc: "Inspect incident edges" },
+    { line: 7, text: "        if v not in visited: stack.push(v)", desc: "Push neighbor onto exploration stack" },
+    { line: 8, text: "  return traversal_order", desc: "Depth-first exploration complete" },
   ],
 };
 
@@ -85,15 +121,13 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
   const [traceData, setTraceData] = useState(null);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [playbackSpeed, setPlaybackSpeed] = useState(1200); // ms per step
+  const [playbackSpeed, setPlaybackSpeed] = useState(1000); // ms per step
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const playTimerRef = useRef(null);
 
-  // Active graph selection: prefer customGraph if passed (e.g. from RoutePage), else sample graph
   const activeGraph = customGraph || SAMPLE_BENCHMARK_GRAPHS[selectedGraphKey];
 
-  // Auto-generate clean positions in an elliptical ring if positions are not provided
   const nodePositions = React.useMemo(() => {
     if (activeGraph.positions) return activeGraph.positions;
     const nodes = activeGraph.nodes || [];
@@ -113,7 +147,6 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
     return positions;
   }, [activeGraph]);
 
-  // Load trace from backend
   const loadTrace = async () => {
     setLoading(true);
     setError("");
@@ -121,9 +154,10 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
     setCurrentStepIndex(0);
 
     try {
+      const start = activeGraph.start || activeGraph.nodes[0];
+      const target = activeGraph.target || activeGraph.nodes[activeGraph.nodes.length - 1];
+
       if (algorithm === "dijkstra") {
-        const start = activeGraph.start || activeGraph.nodes[0];
-        const target = activeGraph.target || activeGraph.nodes[activeGraph.nodes.length - 1];
         const payload = {
           nodes: activeGraph.nodes,
           edges: activeGraph.edges,
@@ -134,13 +168,40 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
         };
         const data = await getDijkstraTrace(payload);
         setTraceData(data);
-      } else {
+      } else if (algorithm === "prim") {
+        const payload = {
+          nodes: activeGraph.nodes,
+          edges: activeGraph.edges,
+          criterion: criterion === "distance" ? "cost" : criterion,
+        };
+        const data = await getPrimTrace(payload);
+        setTraceData(data);
+      } else if (algorithm === "kruskal") {
         const payload = {
           nodes: activeGraph.nodes,
           edges: activeGraph.edges,
           criterion: criterion === "distance" ? "cost" : criterion,
         };
         const data = await getKruskalTrace(payload);
+        setTraceData(data);
+      } else if (algorithm === "bfs") {
+        const payload = {
+          nodes: activeGraph.nodes,
+          edges: activeGraph.edges,
+          start,
+          target,
+          directed: false,
+        };
+        const data = await getBfsTrace(payload);
+        setTraceData(data);
+      } else if (algorithm === "dfs") {
+        const payload = {
+          nodes: activeGraph.nodes,
+          edges: activeGraph.edges,
+          start,
+          directed: false,
+        };
+        const data = await getDfsTrace(payload);
         setTraceData(data);
       }
     } catch (err) {
@@ -156,7 +217,7 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
     loadTrace();
   }, [selectedGraphKey, algorithm, criterion, customGraph]);
 
-  // Playback loop
+  // Playback timer loop
   useEffect(() => {
     if (isPlaying && traceData?.events?.length) {
       playTimerRef.current = setInterval(() => {
@@ -190,16 +251,31 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
       if (type === "RELAX") return 9;
       if (type === "FINALIZE") return 5;
       if (type === "COMPLETE") return 6;
+    } else if (algorithm === "prim") {
+      if (type === "INITIALIZE" || type === "VISIT_ROOT") return 2;
+      if (type === "ACCEPT_EDGE") return 6;
+      if (type === "REJECT_EDGE") return 5;
+      if (type === "COMPLETE") return 8;
     } else if (algorithm === "kruskal") {
       if (type === "INITIALIZE") return 3;
       if (type === "ACCEPT_EDGE") return 7;
-      if (type === "REJECT_CYCLE") return 6;
+      if (type === "REJECT_EDGE") return 6;
       if (type === "COMPLETE") return 9;
+    } else if (algorithm === "bfs") {
+      if (type === "INITIALIZE") return 2;
+      if (type === "VISIT_NODE") return 4;
+      if (type === "ENQUEUE") return 7;
+      if (type === "EXAMINE_EDGE") return 6;
+      if (type === "COMPLETE") return 8;
+    } else if (algorithm === "dfs") {
+      if (type === "INITIALIZE") return 2;
+      if (type === "VISIT_NODE") return 4;
+      if (type === "PUSH_STACK") return 7;
+      if (type === "COMPLETE") return 8;
     }
     return null;
   }, [currentEvent, algorithm]);
 
-  // Node styling logic based on current trace step
   const getNodeState = (nodeId) => {
     if (!currentEvent) return "default";
     if (algorithm === "dijkstra") {
@@ -208,11 +284,21 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
       if (currentEvent.priority_queue?.some(([_, n]) => n === nodeId)) return "in_queue";
       if (nodeId === activeGraph.start) return "start";
       if (nodeId === activeGraph.target) return "target";
+    } else if (algorithm === "prim") {
+      if (currentEvent.current_vertex === nodeId) return "current";
+      if (currentEvent.visited_nodes?.includes(nodeId)) return "finalized";
+    } else if (algorithm === "bfs") {
+      if (currentEvent.current_vertex === nodeId) return "current";
+      if (currentEvent.queue?.includes(nodeId)) return "in_queue";
+      if (currentEvent.visited_nodes?.includes(nodeId)) return "finalized";
+    } else if (algorithm === "dfs") {
+      if (currentEvent.current_vertex === nodeId) return "current";
+      if (currentEvent.stack?.includes(nodeId)) return "in_queue";
+      if (currentEvent.visited_nodes?.includes(nodeId)) return "finalized";
     }
     return "default";
   };
 
-  // Edge styling logic based on current trace step
   const getEdgeState = (edge) => {
     if (!currentEvent) return "default";
     const u = edge.source;
@@ -233,7 +319,7 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
           if ((p1 === u && p2 === v) || (p1 === v && p2 === u)) return "path";
         }
       }
-    } else if (algorithm === "kruskal") {
+    } else if (algorithm === "prim" || algorithm === "kruskal") {
       if (
         currentEvent.edge &&
         ((currentEvent.edge.source === u && currentEvent.edge.target === v) ||
@@ -248,6 +334,29 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
       ) {
         return "accepted";
       }
+    } else if (algorithm === "bfs") {
+      if (
+        currentEvent.edge &&
+        ((currentEvent.edge.source === u && currentEvent.edge.target === v) ||
+          (currentEvent.edge.source === v && currentEvent.edge.target === u))
+      ) {
+        return currentEvent.event_type === "ENQUEUE" ? "relaxed" : "examined";
+      }
+      if (currentEvent.event_type === "COMPLETE" && traceData?.path?.length > 1) {
+        for (let i = 0; i < traceData.path.length - 1; i++) {
+          const p1 = traceData.path[i];
+          const p2 = traceData.path[i + 1];
+          if ((p1 === u && p2 === v) || (p1 === v && p2 === u)) return "path";
+        }
+      }
+    } else if (algorithm === "dfs") {
+      if (
+        currentEvent.edge &&
+        ((currentEvent.edge.source === u && currentEvent.edge.target === v) ||
+          (currentEvent.edge.source === v && currentEvent.edge.target === u))
+      ) {
+        return "examined";
+      }
     }
     return "default";
   };
@@ -255,17 +364,17 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
   return (
     <div className="border border-line rounded-xl bg-surface p-4 shadow-sm space-y-4">
       {/* Header & Controls Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-3">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 border-b border-line pb-3">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-brand-soft flex items-center justify-center text-brand">
             <Icon name="route" size={18} />
           </div>
           <div>
             <h3 className="text-sm font-bold text-ink">
-              Algorithm Execution Studio
+              Graph Algorithm Execution Studio
             </h3>
             <p className="text-xs text-ink-soft">
-              Interactive trace visualizer on graph corridors and network topologies.
+              Step-by-step visualizer for Shortest Paths (Dijkstra), Minimum Spanning Trees (Prim & Kruskal), and Graph Traversals (BFS & DFS).
             </p>
           </div>
         </div>
@@ -274,6 +383,7 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
         <div className="flex flex-wrap items-center gap-2">
           {!customGraph && (
             <select
+              id="graph-preset-select"
               className="input text-xs py-1 h-8"
               value={selectedGraphKey}
               onChange={(e) => setSelectedGraphKey(e.target.value)}
@@ -283,10 +393,11 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
             </select>
           )}
 
-          <div className="flex bg-surface-subtle p-0.5 rounded-lg border border-line text-xs font-semibold">
+          <div className="flex bg-surface-subtle p-0.5 rounded-lg border border-line text-xs font-semibold flex-wrap">
             <button
               type="button"
-              className={`px-3 py-1 rounded-md transition-colors ${
+              id="algo-btn-dijkstra"
+              className={`px-2.5 py-1 rounded-md transition-colors ${
                 algorithm === "dijkstra" ? "bg-brand text-white shadow-xs" : "text-ink-soft hover:text-ink"
               }`}
               onClick={() => setAlgorithm("dijkstra")}
@@ -295,12 +406,43 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
             </button>
             <button
               type="button"
-              className={`px-3 py-1 rounded-md transition-colors ${
+              id="algo-btn-prim"
+              className={`px-2.5 py-1 rounded-md transition-colors ${
+                algorithm === "prim" ? "bg-brand text-white shadow-xs" : "text-ink-soft hover:text-ink"
+              }`}
+              onClick={() => setAlgorithm("prim")}
+            >
+              Prim MST
+            </button>
+            <button
+              type="button"
+              id="algo-btn-kruskal"
+              className={`px-2.5 py-1 rounded-md transition-colors ${
                 algorithm === "kruskal" ? "bg-brand text-white shadow-xs" : "text-ink-soft hover:text-ink"
               }`}
               onClick={() => setAlgorithm("kruskal")}
             >
               Kruskal MST
+            </button>
+            <button
+              type="button"
+              id="algo-btn-bfs"
+              className={`px-2.5 py-1 rounded-md transition-colors ${
+                algorithm === "bfs" ? "bg-brand text-white shadow-xs" : "text-ink-soft hover:text-ink"
+              }`}
+              onClick={() => setAlgorithm("bfs")}
+            >
+              BFS
+            </button>
+            <button
+              type="button"
+              id="algo-btn-dfs"
+              className={`px-2.5 py-1 rounded-md transition-colors ${
+                algorithm === "dfs" ? "bg-brand text-white shadow-xs" : "text-ink-soft hover:text-ink"
+              }`}
+              onClick={() => setAlgorithm("dfs")}
+            >
+              DFS
             </button>
           </div>
 
@@ -330,17 +472,19 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
         </div>
       )}
 
-      {/* Main Studio Viewport: Split Graph Canvas + Stepper & Pseudocode */}
+      {/* Main Studio Viewport */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Left Column: Interactive Graph SVG (7 cols) */}
+        {/* Left Column: Interactive Graph SVG */}
         <div className="lg:col-span-7 flex flex-col bg-surface-subtle border border-line rounded-xl p-3 overflow-hidden">
           <div className="flex items-center justify-between text-xs text-ink-soft mb-2 px-1">
             <span className="font-semibold text-ink">
               {activeGraph.name || "Graph Network"} ({activeGraph.nodes.length} Vertices, {activeGraph.edges.length} Edges)
             </span>
-            <span>
-              Target: <strong className="text-brand">{activeGraph.target || activeGraph.nodes[activeGraph.nodes.length - 1]}</strong>
-            </span>
+            {(algorithm === "dijkstra" || algorithm === "bfs") && (
+              <span>
+                Target: <strong className="text-brand">{activeGraph.target || activeGraph.nodes[activeGraph.nodes.length - 1]}</strong>
+              </span>
+            )}
           </div>
 
           {/* SVG Canvas */}
@@ -360,24 +504,24 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
                   const mx = (p1.x + p2.x) / 2;
                   const my = (p1.y + p2.y) / 2;
 
-                  let strokeColor = "#c7d4cf"; // default line
+                  let strokeColor = "#c7d4cf";
                   let strokeWidth = 2;
                   let strokeDasharray = "none";
 
                   if (state === "examined") {
-                    strokeColor = "#e4ae50"; // caution amber
+                    strokeColor = "#e4ae50";
                     strokeWidth = 3.5;
                   } else if (state === "relaxed") {
-                    strokeColor = "#087f6d"; // brand teal
+                    strokeColor = "#087f6d";
                     strokeWidth = 4;
                   } else if (state === "path") {
-                    strokeColor = "#11875d"; // safe emerald
+                    strokeColor = "#11875d";
                     strokeWidth = 4.5;
                   } else if (state === "accepted") {
-                    strokeColor = "#11875d"; // MST accepted
+                    strokeColor = "#11875d";
                     strokeWidth = 4;
                   } else if (state === "rejected") {
-                    strokeColor = "#c9363e"; // danger red
+                    strokeColor = "#c9363e";
                     strokeWidth = 2;
                     strokeDasharray = "4 4";
                   }
@@ -395,7 +539,6 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
                         strokeLinecap="round"
                         className="transition-all duration-300"
                       />
-                      {/* Edge Weight Label */}
                       <rect
                         x={mx - 15}
                         y={my - 9}
@@ -421,7 +564,7 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
                   );
                 })}
 
-                {/* Nodes rendered on top of edges */}
+                {/* Nodes rendered on top */}
                 {activeGraph.nodes.map((nodeId) => {
                   const pos = nodePositions[nodeId] || { x: 50, y: 50 };
                   const state = getNodeState(nodeId);
@@ -434,17 +577,17 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
                   let radius = 22;
 
                   if (state === "current") {
-                    fillColor = "#dff4ee"; // brand soft
-                    strokeColor = "#087f6d"; // brand teal
+                    fillColor = "#dff4ee";
+                    strokeColor = "#087f6d";
                     textColor = "#056555";
                     radius = 24;
                   } else if (state === "finalized") {
-                    fillColor = "#e1f5ec"; // safe soft
-                    strokeColor = "#11875d"; // safe emerald
+                    fillColor = "#e1f5ec";
+                    strokeColor = "#11875d";
                     textColor = "#0b5b3e";
                   } else if (state === "in_queue") {
-                    fillColor = "#fff2d5"; // caution soft
-                    strokeColor = "#a96708"; // caution
+                    fillColor = "#fff2d5";
+                    strokeColor = "#a96708";
                     textColor = "#7d4a04";
                   } else if (nodeId === activeGraph.start) {
                     fillColor = "#dff4ee";
@@ -475,7 +618,6 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
                         {cleanLabel.length > 10 ? cleanLabel.slice(0, 9) + "…" : cleanLabel}
                       </text>
 
-                      {/* Tentative Distance Badge above node */}
                       {algorithm === "dijkstra" && currentEvent?.distances && (
                         <g>
                           <rect
@@ -515,11 +657,11 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
             </span>
             <span className="flex items-center gap-1">
               <span className="w-2.5 h-2.5 rounded-full bg-[#11875d] border border-[#11875d]" />
-              Finalized / Optimal
+              Finalized / Visited / Tree
             </span>
             <span className="flex items-center gap-1">
               <span className="w-2.5 h-2.5 rounded-full bg-[#a96708] border border-[#a96708]" />
-              In Priority Queue
+              In Frontier (Queue / Stack)
             </span>
             <span className="flex items-center gap-1">
               <span className="w-2.5 h-2.5 rounded-full bg-white border border-[#75847f]" />
@@ -528,7 +670,7 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
           </div>
         </div>
 
-        {/* Right Column: Execution Stepper, Explanations & Pseudocode (5 cols) */}
+        {/* Right Column: Execution Stepper & Pseudocode */}
         <div className="lg:col-span-5 flex flex-col justify-between space-y-3">
           {/* Stepper Controls Bar */}
           <div className="p-3 bg-surface-subtle border border-line rounded-xl space-y-2.5">
@@ -556,9 +698,10 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
             </div>
 
             {/* Playback Buttons */}
-            <div className="flex items-center justify-between gap-1 pt-1">
+            <div className="flex items-center justify-between gap-1 pt-1 flex-wrap">
               <button
                 type="button"
+                id="graph-step-reset-btn"
                 className="btn btn-xs btn-secondary"
                 onClick={() => setCurrentStepIndex(0)}
                 disabled={currentStepIndex === 0 || totalSteps === 0}
@@ -568,6 +711,7 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
               </button>
               <button
                 type="button"
+                id="graph-step-prev-btn"
                 className="btn btn-xs btn-secondary"
                 onClick={() => setCurrentStepIndex((prev) => Math.max(0, prev - 1))}
                 disabled={currentStepIndex === 0 || totalSteps === 0}
@@ -576,14 +720,16 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
               </button>
               <button
                 type="button"
+                id="graph-step-play-btn"
                 className="btn btn-xs btn-primary font-bold min-w-[70px]"
                 onClick={() => setIsPlaying(!isPlaying)}
                 disabled={totalSteps === 0}
               >
-                {isPlaying ? "Pause" : "Play"}
+                {isPlaying ? "Pause" : currentStepIndex >= totalSteps - 1 ? "Replay" : "Play"}
               </button>
               <button
                 type="button"
+                id="graph-step-next-btn"
                 className="btn btn-xs btn-secondary"
                 onClick={() => setCurrentStepIndex((prev) => Math.min(totalSteps - 1, prev + 1))}
                 disabled={currentStepIndex >= totalSteps - 1 || totalSteps === 0}
@@ -597,8 +743,8 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
                 onChange={(e) => setPlaybackSpeed(Number(e.target.value))}
               >
                 <option value={1800}>0.5x</option>
-                <option value={1200}>1.0x</option>
-                <option value={600}>2.0x</option>
+                <option value={1000}>1.0x</option>
+                <option value={500}>2.0x</option>
               </select>
             </div>
           </div>
@@ -613,19 +759,27 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
                 "Select algorithm and step through the execution trace to observe state changes."}
             </p>
 
-            {/* Final Path or MST Result if complete */}
+            {/* Results summary when complete */}
             {currentEvent?.event_type === "COMPLETE" && (
               <div className="pt-2 border-t border-line text-xs font-semibold text-safe">
                 {algorithm === "dijkstra" && traceData?.final_path && (
-                  <p>Path: {traceData.final_path.join(" -> ")} | Cost: {traceData.total_cost ?? "inf"}</p>
+                  <p>Path: {traceData.final_path.join(" -> ")} | Total Cost: {traceData.total_cost ?? "inf"}</p>
                 )}
-                {algorithm === "kruskal" && traceData?.selected_edges && (
-                  <p>MST Edges: {traceData.selected_edges.length} | Cost: {traceData.total_cost ?? 0}</p>
+                {(algorithm === "prim" || algorithm === "kruskal") && traceData?.selected_edges && (
+                  <p>
+                    {traceData.is_forest ? "Spanning Forest" : "Minimum Spanning Tree"}: {traceData.selected_edges.length} edges | Total Cost: {traceData.total_cost ?? 0}
+                  </p>
+                )}
+                {algorithm === "bfs" && traceData?.traversal_order && (
+                  <p>BFS Traversal Order: {traceData.traversal_order.join(" -> ")}</p>
+                )}
+                {algorithm === "dfs" && traceData?.traversal_order && (
+                  <p>DFS Traversal Order: {traceData.traversal_order.join(" -> ")}</p>
                 )}
               </div>
             )}
 
-            {/* Priority Queue / Disjoint Components Snapshot */}
+            {/* Dynamic queue / stack / priority queue visual snapshot */}
             {algorithm === "dijkstra" && currentEvent?.priority_queue && currentEvent.event_type !== "COMPLETE" && (
               <div className="pt-2 border-t border-line text-[11px]">
                 <strong className="text-ink-soft block mb-1">
@@ -643,6 +797,38 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
                   {currentEvent.priority_queue.length === 0 && (
                     <span className="text-ink-faint italic">Queue is empty</span>
                   )}
+                </div>
+              </div>
+            )}
+
+            {algorithm === "bfs" && currentEvent?.queue && currentEvent.event_type !== "COMPLETE" && (
+              <div className="pt-2 border-t border-line text-[11px]">
+                <strong className="text-ink-soft block mb-1">
+                  BFS FIFO Queue (Front &rarr; Back):
+                </strong>
+                <div className="flex gap-1.5 flex-wrap font-mono text-[10px]">
+                  {currentEvent.queue.map((v, idx) => (
+                    <span key={idx} className="px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200">
+                      {v}
+                    </span>
+                  ))}
+                  {currentEvent.queue.length === 0 && <span className="text-ink-faint italic">Queue is empty</span>}
+                </div>
+              </div>
+            )}
+
+            {algorithm === "dfs" && currentEvent?.stack && currentEvent.event_type !== "COMPLETE" && (
+              <div className="pt-2 border-t border-line text-[11px]">
+                <strong className="text-ink-soft block mb-1">
+                  DFS LIFO Stack (Bottom &rarr; Top):
+                </strong>
+                <div className="flex gap-1.5 flex-wrap font-mono text-[10px]">
+                  {currentEvent.stack.map((v, idx) => (
+                    <span key={idx} className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200">
+                      {v}
+                    </span>
+                  ))}
+                  {currentEvent.stack.length === 0 && <span className="text-ink-faint italic">Stack is empty</span>}
                 </div>
               </div>
             )}
@@ -672,7 +858,15 @@ export default function DaaGraphVisualizer({ customGraph = null, initialAlgorith
               <span className="font-semibold text-ink-soft">
                 Pseudocode ({algorithm.toUpperCase()})
               </span>
-              <span>{algorithm === "dijkstra" ? "O((V + E) log V)" : "O(E log E)"}</span>
+              <span>
+                {algorithm === "dijkstra"
+                  ? "O((V + E) log V)"
+                  : algorithm === "prim"
+                  ? "O(E log V)"
+                  : algorithm === "kruskal"
+                  ? "O(E log E)"
+                  : "O(V + E)"}
+              </span>
             </div>
             <div className="space-y-0.5 overflow-x-auto max-h-[140px] pt-1">
               {(PSEUDOCODE[algorithm] || []).map((line) => {

@@ -15,8 +15,10 @@ from auth import require_clerk_user
 from demo_config import DEMO_MODE, OSRM_BASE_URL, ROUTING_PROVIDER, capability_config
 from algorithm_engine import (
     benchmark, bfs, binary_search, dfs, dijkstra, kruskal, optimize_projects,
-    prim, sort_routes, synthetic_graph, merge_sort,
-    record_dijkstra_trace, record_kruskal_trace,
+    prim, sort_routes, synthetic_graph, merge_sort, quick_sort, heap_sort,
+    bubble_sort, selection_sort, insertion_sort, linear_search,
+    record_dijkstra_trace, record_kruskal_trace, record_prim_trace,
+    record_bfs_trace, record_dfs_trace, record_sort_trace, record_search_trace,
     min_max_dc, fractional_knapsack, lcs, lis, matrix_chain_order,
     graph_coloring, n_queens,
 )
@@ -185,6 +187,18 @@ class SearchRequest(BaseModel):
     items: List[Any] = Field(default_factory=list, max_length=10000)
     key: Optional[str] = None
     value: Any
+
+
+class SortTraceRequest(BaseModel):
+    items: List[float] = Field(default_factory=list, max_length=10000)
+    algorithm: str = "merge_sort"
+
+
+class SearchTraceRequest(BaseModel):
+    items: List[float] = Field(default_factory=list, max_length=10000)
+    value: float
+    algorithm: str = "binary_search"
+
 
 
 class ProjectRequest(BaseModel):
@@ -361,11 +375,23 @@ def algorithm_sort_routes(req: RouteSortRequest):
 @app.post("/api/algorithms/sort")
 def algorithm_sort(req: SortItemsRequest):
     from time import perf_counter
-    from algorithm_engine import quick_sort, heap_sort
     try:
-        sorter = {"merge": merge_sort, "quick": quick_sort, "heap": heap_sort}.get(req.algorithm)
+        sorter = {
+            "merge": merge_sort,
+            "merge_sort": merge_sort,
+            "quick": quick_sort,
+            "quick_sort": quick_sort,
+            "heap": heap_sort,
+            "heap_sort": heap_sort,
+            "bubble": bubble_sort,
+            "bubble_sort": bubble_sort,
+            "selection": selection_sort,
+            "selection_sort": selection_sort,
+            "insertion": insertion_sort,
+            "insertion_sort": insertion_sort,
+        }.get(req.algorithm)
         if not sorter:
-            raise ValueError("algorithm must be merge, quick, or heap.")
+            raise ValueError("algorithm must be bubble, selection, insertion, merge, quick, or heap.")
         started = perf_counter()
         sorted_items = sorter(req.items, req.key)
         return {
@@ -425,6 +451,50 @@ def algorithm_trace_kruskal(req: MstRequest):
         return record_kruskal_trace(nodes, edges, req.criterion)
     except ValueError as exc:
         _algorithm_error(exc)
+
+
+@app.post("/api/algorithms/trace/prim")
+def algorithm_trace_prim(req: MstRequest):
+    try:
+        nodes, edges, _ = _graph_payload(req)
+        return record_prim_trace(nodes, edges, req.criterion)
+    except ValueError as exc:
+        _algorithm_error(exc)
+
+
+@app.post("/api/algorithms/trace/bfs")
+def algorithm_trace_bfs(req: TraversalRequest):
+    try:
+        nodes, edges, directed = _graph_payload(req)
+        return record_bfs_trace(nodes, edges, req.start, req.target, directed)
+    except ValueError as exc:
+        _algorithm_error(exc)
+
+
+@app.post("/api/algorithms/trace/dfs")
+def algorithm_trace_dfs(req: TraversalRequest):
+    try:
+        nodes, edges, directed = _graph_payload(req)
+        return record_dfs_trace(nodes, edges, req.start, directed)
+    except ValueError as exc:
+        _algorithm_error(exc)
+
+
+@app.post("/api/algorithms/trace/sort")
+def algorithm_trace_sort(req: SortTraceRequest):
+    try:
+        return record_sort_trace(req.items, req.algorithm)
+    except ValueError as exc:
+        _algorithm_error(exc)
+
+
+@app.post("/api/algorithms/trace/search")
+def algorithm_trace_search(req: SearchTraceRequest):
+    try:
+        return record_search_trace(req.items, req.value, req.algorithm)
+    except ValueError as exc:
+        _algorithm_error(exc)
+
 
 
 # ── Additional DAA Syllabus Endpoints ────────────────────────────────────────

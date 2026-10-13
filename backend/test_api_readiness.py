@@ -190,6 +190,46 @@ class ApiReadinessTests(unittest.TestCase):
         self.assertEqual(data["algorithm"], "Kruskal")
         self.assertEqual(len(data["selected_edges"]), 3)
 
+    def test_sort_trace_endpoint(self):
+        payload = {
+            "items": [45, 12, 89, -3, 23, 7],
+            "algorithm": "quick_sort",
+        }
+        response = self.client.post("/api/algorithms/trace/sort", json=payload)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["final_array"], [-3, 7, 12, 23, 45, 89])
+        self.assertGreater(data["total_steps"], 1)
+
+    def test_search_trace_endpoint(self):
+        payload = {
+            "items": [5, 10, 15, 20, 25, 30],
+            "value": 20,
+            "algorithm": "binary_search",
+        }
+        response = self.client.post("/api/algorithms/trace/search", json=payload)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["found"])
+        self.assertEqual(data["index"], 3)
+
+    def test_prim_trace_endpoint(self):
+        payload = {
+            "nodes": ["A", "B", "C", "D"],
+            "edges": [
+                {"source": "A", "target": "B", "cost": 1.0},
+                {"source": "B", "target": "C", "cost": 2.0},
+                {"source": "C", "target": "D", "cost": 3.0},
+                {"source": "A", "target": "D", "cost": 5.0},
+            ],
+            "criterion": "cost",
+        }
+        response = self.client.post("/api/algorithms/trace/prim", json=payload)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["algorithm"], "Prim")
+        self.assertEqual(len(data["selected_edges"]), 3)
+
 
 if __name__ == "__main__":
     unittest.main()

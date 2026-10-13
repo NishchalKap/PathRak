@@ -299,6 +299,49 @@ def _item_val(item: Any, key: Optional[str]) -> Any:
     return item
 
 
+def bubble_sort(items: list[Any], key: Optional[str] = None) -> list[Any]:
+    """Bubble sort running in O(N^2) time with early termination."""
+    arr = list(items)
+    n = len(arr)
+    for i in range(n):
+        swapped = False
+        for j in range(0, n - i - 1):
+            if _item_val(arr[j], key) > _item_val(arr[j + 1], key):
+                arr[j], arr[j + 1] = arr[j + 1], arr[j]
+                swapped = True
+        if not swapped:
+            break
+    return arr
+
+
+def selection_sort(items: list[Any], key: Optional[str] = None) -> list[Any]:
+    """Selection sort running in O(N^2) time."""
+    arr = list(items)
+    n = len(arr)
+    for i in range(n):
+        min_idx = i
+        for j in range(i + 1, n):
+            if _item_val(arr[j], key) < _item_val(arr[min_idx], key):
+                min_idx = j
+        if min_idx != i:
+            arr[i], arr[min_idx] = arr[min_idx], arr[i]
+    return arr
+
+
+def insertion_sort(items: list[Any], key: Optional[str] = None) -> list[Any]:
+    """Insertion sort running in O(N^2) time."""
+    arr = list(items)
+    for i in range(1, len(arr)):
+        key_elem = arr[i]
+        key_val = _item_val(key_elem, key)
+        j = i - 1
+        while j >= 0 and _item_val(arr[j], key) > key_val:
+            arr[j + 1] = arr[j]
+            j -= 1
+        arr[j + 1] = key_elem
+    return arr
+
+
 def merge_sort(items: list[Any], key: Optional[str] = None) -> list[Any]:
     """Stable merge sort running in O(N log N) time."""
     if len(items) <= 1:
@@ -341,6 +384,17 @@ def heap_sort(items: list[Any], key: Optional[str] = None) -> list[Any]:
     return [heappop(heap)[2] for _ in range(len(heap))]
 
 
+def linear_search(items: list[Any], key: Optional[str] = None, value: Any = None) -> int:
+    """Linear search sequentially scanning elements.
+    
+    Returns 0-based index of first occurrence, or -1 if not found.
+    """
+    for idx, item in enumerate(items):
+        if _item_val(item, key) == value:
+            return idx
+    return -1
+
+
 def binary_search(items: list[Any], key: Optional[str] = None, value: Any = None) -> int:
     """Binary search over an array pre-sorted in ascending order.
     
@@ -367,10 +421,18 @@ def sort_routes(
         raise ValueError("Unsupported route sort key.")
     if any(key not in route for route in routes):
         raise ValueError(f"Every route must contain '{key}'.")
-    sorting = {"merge": merge_sort, "quick": quick_sort, "heap": heap_sort}.get(algorithm)
+    sorting = {
+        "merge": merge_sort,
+        "quick": quick_sort,
+        "heap": heap_sort,
+        "bubble": bubble_sort,
+        "selection": selection_sort,
+        "insertion": insertion_sort,
+    }.get(algorithm)
     if not sorting:
-        raise ValueError("algorithm must be merge, quick, or heap.")
+        raise ValueError("algorithm must be bubble, selection, insertion, merge, quick, or heap.")
     return {"algorithm": algorithm, "key": key, "routes": sorting(routes, key)}
+
 
 
 def optimize_projects(
@@ -1139,4 +1201,934 @@ def record_kruskal_trace(
         "selected_edges": selected_edges,
         "total_cost": total_cost,
     }
+
+
+def record_sort_trace(items: list[Any], algorithm: str = "merge_sort") -> dict:
+    """Records deterministic step-by-step trace events of sorting algorithms."""
+    algo_key = algorithm.lower().replace("-", "_").replace(" ", "_")
+    if algo_key in {"bubble", "bubble_sort"}:
+        canonical_name = "Bubble Sort"
+        complexity = "O(N²) worst/avg, O(N) best"
+    elif algo_key in {"selection", "selection_sort"}:
+        canonical_name = "Selection Sort"
+        complexity = "O(N²) all cases"
+    elif algo_key in {"insertion", "insertion_sort"}:
+        canonical_name = "Insertion Sort"
+        complexity = "O(N²) worst/avg, O(N) best"
+    elif algo_key in {"merge", "merge_sort"}:
+        canonical_name = "Merge Sort"
+        complexity = "O(N log N) all cases"
+    elif algo_key in {"quick", "quick_sort"}:
+        canonical_name = "Quick Sort"
+        complexity = "O(N log N) avg, O(N²) worst"
+    elif algo_key in {"heap", "heap_sort"}:
+        canonical_name = "Heap Sort"
+        complexity = "O(N log N) all cases"
+    else:
+        raise ValueError(f"Unsupported sorting algorithm '{algorithm}'. Must be bubble, selection, insertion, merge, quick, or heap.")
+
+    arr = [float(x) if isinstance(x, (int, float)) else x for x in items]
+    n = len(arr)
+    events: list[dict] = []
+    step_num = 0
+    comparisons = 0
+    swaps = 0
+
+    def add_event(
+        event_type: str,
+        current_array: list,
+        comparing: list[int] = None,
+        swapped: list[int] = None,
+        pivot: int = None,
+        min_index: int = None,
+        key_index: int = None,
+        sub_range: list[int] = None,
+        sorted_indices: list[int] = None,
+        explanation: str = "",
+    ):
+        nonlocal step_num
+        step_num += 1
+        events.append({
+            "step": step_num,
+            "event_type": event_type,
+            "array": list(current_array),
+            "comparing": comparing or [],
+            "swapped": swapped or [],
+            "pivot": pivot,
+            "min_index": min_index,
+            "key_index": key_index,
+            "range": sub_range,
+            "sorted_indices": sorted_indices or [],
+            "comparisons": comparisons,
+            "swaps": swaps,
+            "explanation": explanation,
+        })
+
+    add_event(
+        "INITIALIZE",
+        arr,
+        explanation=f"Initialized array with {n} elements for {canonical_name}.",
+    )
+
+    if n <= 1:
+        add_event(
+            "COMPLETE",
+            arr,
+            sorted_indices=list(range(n)),
+            explanation=f"{canonical_name} complete: array is sorted.",
+        )
+        return {
+            "algorithm": canonical_name,
+            "original_array": list(items),
+            "final_array": list(arr),
+            "comparisons": 0,
+            "swaps": 0,
+            "total_steps": len(events),
+            "events": events,
+            "theoretical_complexity": complexity,
+        }
+
+    if algo_key in {"bubble", "bubble_sort"}:
+        sorted_set = set()
+        for i in range(n):
+            swapped_any = False
+            for j in range(0, n - i - 1):
+                comparisons += 1
+                add_event(
+                    "COMPARE",
+                    arr,
+                    comparing=[j, j + 1],
+                    sorted_indices=sorted(sorted_set),
+                    explanation=f"Comparing element at {j} ({arr[j]}) with {j + 1} ({arr[j + 1]}).",
+                )
+                if arr[j] > arr[j + 1]:
+                    arr[j], arr[j + 1] = arr[j + 1], arr[j]
+                    swaps += 1
+                    swapped_any = True
+                    add_event(
+                        "SWAP",
+                        arr,
+                        comparing=[j, j + 1],
+                        swapped=[j, j + 1],
+                        sorted_indices=sorted(sorted_set),
+                        explanation=f"Swapped index {j} ({arr[j + 1]}) and index {j + 1} ({arr[j]}) as left was larger.",
+                    )
+            sorted_set.add(n - 1 - i)
+            add_event(
+                "SORTED_MARK",
+                arr,
+                sorted_indices=sorted(sorted_set),
+                explanation=f"Element at index {n - 1 - i} ({arr[n - 1 - i]}) reached final sorted position.",
+            )
+            if not swapped_any:
+                for k in range(n - i):
+                    sorted_set.add(k)
+                add_event(
+                    "SORTED_MARK",
+                    arr,
+                    sorted_indices=sorted(sorted_set),
+                    explanation="No swaps occurred in this pass: array is fully sorted early.",
+                )
+                break
+
+    elif algo_key in {"selection", "selection_sort"}:
+        sorted_set = set()
+        for i in range(n):
+            min_idx = i
+            add_event(
+                "MIN_SELECT",
+                arr,
+                min_index=min_idx,
+                sorted_indices=sorted(sorted_set),
+                explanation=f"Pass {i + 1}: initial minimum set to index {i} (value {arr[i]}).",
+            )
+            for j in range(i + 1, n):
+                comparisons += 1
+                add_event(
+                    "COMPARE",
+                    arr,
+                    comparing=[j, min_idx],
+                    min_index=min_idx,
+                    sorted_indices=sorted(sorted_set),
+                    explanation=f"Comparing candidate index {j} ({arr[j]}) against current min at {min_idx} ({arr[min_idx]}).",
+                )
+                if arr[j] < arr[min_idx]:
+                    min_idx = j
+                    add_event(
+                        "MIN_SELECT",
+                        arr,
+                        min_index=min_idx,
+                        sorted_indices=sorted(sorted_set),
+                        explanation=f"Updated minimum to index {min_idx} (value {arr[min_idx]}).",
+                    )
+            if min_idx != i:
+                arr[i], arr[min_idx] = arr[min_idx], arr[i]
+                swaps += 1
+                add_event(
+                    "SWAP",
+                    arr,
+                    swapped=[i, min_idx],
+                    min_index=min_idx,
+                    sorted_indices=sorted(sorted_set),
+                    explanation=f"Swapped minimum element {arr[i]} into sorted position {i}.",
+                )
+            sorted_set.add(i)
+            add_event(
+                "SORTED_MARK",
+                arr,
+                sorted_indices=sorted(sorted_set),
+                explanation=f"Index {i} ({arr[i]}) finalized in sorted order.",
+            )
+
+    elif algo_key in {"insertion", "insertion_sort"}:
+        sorted_set = {0}
+        for i in range(1, n):
+            key_val = arr[i]
+            add_event(
+                "INSERT_KEY",
+                arr,
+                key_index=i,
+                sorted_indices=sorted(sorted_set),
+                explanation=f"Selected key element {key_val} at index {i} for insertion.",
+            )
+            j = i - 1
+            while j >= 0:
+                comparisons += 1
+                add_event(
+                    "COMPARE",
+                    arr,
+                    comparing=[j, j + 1],
+                    key_index=j + 1,
+                    sorted_indices=sorted(sorted_set),
+                    explanation=f"Comparing element at {j} ({arr[j]}) with key {key_val}.",
+                )
+                if arr[j] > key_val:
+                    arr[j + 1] = arr[j]
+                    swaps += 1
+                    add_event(
+                        "WRITE",
+                        arr,
+                        swapped=[j + 1],
+                        key_index=j,
+                        sorted_indices=sorted(sorted_set),
+                        explanation=f"Shifted {arr[j + 1]} right to position {j + 1}.",
+                    )
+                    j -= 1
+                else:
+                    break
+            arr[j + 1] = key_val
+            swaps += 1
+            sorted_set.add(i)
+            add_event(
+                "WRITE",
+                arr,
+                swapped=[j + 1],
+                key_index=j + 1,
+                sorted_indices=sorted(sorted_set),
+                explanation=f"Inserted key {key_val} into position {j + 1}.",
+            )
+
+    elif algo_key in {"merge", "merge_sort"}:
+        def _trace_merge_sort(low: int, high: int):
+            nonlocal comparisons, swaps
+            if low >= high:
+                return
+            mid = (low + high) // 2
+            add_event(
+                "MERGE_RANGE",
+                arr,
+                sub_range=[low, high],
+                explanation=f"Dividing range [{low}..{high}] into [{low}..{mid}] and [{mid + 1}..{high}].",
+            )
+            _trace_merge_sort(low, mid)
+            _trace_merge_sort(mid + 1, high)
+
+            left = arr[low : mid + 1]
+            right = arr[mid + 1 : high + 1]
+            i = j = 0
+            k = low
+            add_event(
+                "MERGE_RANGE",
+                arr,
+                sub_range=[low, high],
+                explanation=f"Merging sorted subarrays [{low}..{mid}] and [{mid + 1}..{high}].",
+            )
+            while i < len(left) and j < len(right):
+                comparisons += 1
+                add_event(
+                    "COMPARE",
+                    arr,
+                    comparing=[low + i, mid + 1 + j],
+                    sub_range=[low, high],
+                    explanation=f"Comparing left element {left[i]} with right element {right[j]}.",
+                )
+                if left[i] <= right[j]:
+                    arr[k] = left[i]
+                    i += 1
+                else:
+                    arr[k] = right[j]
+                    j += 1
+                swaps += 1
+                add_event(
+                    "WRITE",
+                    arr,
+                    swapped=[k],
+                    sub_range=[low, high],
+                    explanation=f"Wrote {arr[k]} into position {k}.",
+                )
+                k += 1
+
+            while i < len(left):
+                arr[k] = left[i]
+                swaps += 1
+                i += 1
+                add_event(
+                    "WRITE",
+                    arr,
+                    swapped=[k],
+                    sub_range=[low, high],
+                    explanation=f"Flushed remaining left element {arr[k]} into position {k}.",
+                )
+                k += 1
+
+            while j < len(right):
+                arr[k] = right[j]
+                swaps += 1
+                j += 1
+                add_event(
+                    "WRITE",
+                    arr,
+                    swapped=[k],
+                    sub_range=[low, high],
+                    explanation=f"Flushed remaining right element {arr[k]} into position {k}.",
+                )
+                k += 1
+
+        _trace_merge_sort(0, n - 1)
+
+    elif algo_key in {"quick", "quick_sort"}:
+        sorted_set = set()
+
+        def _trace_quick_sort(low: int, high: int):
+            nonlocal comparisons, swaps
+            if low > high:
+                return
+            if low == high:
+                sorted_set.add(low)
+                add_event(
+                    "SORTED_MARK",
+                    arr,
+                    sorted_indices=sorted(sorted_set),
+                    explanation=f"Single element at index {low} is sorted.",
+                )
+                return
+
+            pivot_idx = high
+            pivot_val = arr[pivot_idx]
+            add_event(
+                "PIVOT",
+                arr,
+                pivot=pivot_idx,
+                sub_range=[low, high],
+                sorted_indices=sorted(sorted_set),
+                explanation=f"Chose pivot {pivot_val} at index {pivot_idx} for range [{low}..{high}].",
+            )
+            i = low - 1
+            for j in range(low, high):
+                comparisons += 1
+                add_event(
+                    "COMPARE",
+                    arr,
+                    comparing=[j, pivot_idx],
+                    pivot=pivot_idx,
+                    sub_range=[low, high],
+                    sorted_indices=sorted(sorted_set),
+                    explanation=f"Comparing element at {j} ({arr[j]}) with pivot ({pivot_val}).",
+                )
+                if arr[j] <= pivot_val:
+                    i += 1
+                    if i != j:
+                        arr[i], arr[j] = arr[j], arr[i]
+                        swaps += 1
+                        add_event(
+                            "SWAP",
+                            arr,
+                            swapped=[i, j],
+                            pivot=pivot_idx,
+                            sub_range=[low, high],
+                            sorted_indices=sorted(sorted_set),
+                            explanation=f"Swapped index {i} and {j} to put {arr[i]} into left partition.",
+                        )
+            pivot_final = i + 1
+            if pivot_final != high:
+                arr[pivot_final], arr[high] = arr[high], arr[pivot_final]
+                swaps += 1
+                add_event(
+                    "SWAP",
+                    arr,
+                    swapped=[pivot_final, high],
+                    pivot=pivot_final,
+                    sub_range=[low, high],
+                    sorted_indices=sorted(sorted_set),
+                    explanation=f"Placed pivot {pivot_val} into permanent partition boundary at index {pivot_final}.",
+                )
+            sorted_set.add(pivot_final)
+            add_event(
+                "SORTED_MARK",
+                arr,
+                pivot=pivot_final,
+                sorted_indices=sorted(sorted_set),
+                explanation=f"Pivot {pivot_val} at index {pivot_final} is finalized.",
+            )
+            _trace_quick_sort(low, pivot_final - 1)
+            _trace_quick_sort(pivot_final + 1, high)
+
+        _trace_quick_sort(0, n - 1)
+
+    elif algo_key in {"heap", "heap_sort"}:
+        sorted_set = set()
+
+        def _sift_down(start_idx: int, end_idx: int):
+            nonlocal comparisons, swaps
+            root = start_idx
+            while True:
+                child = 2 * root + 1
+                if child > end_idx:
+                    break
+                if child + 1 <= end_idx:
+                    comparisons += 1
+                    add_event(
+                        "COMPARE",
+                        arr,
+                        comparing=[child, child + 1],
+                        sorted_indices=sorted(sorted_set),
+                        explanation=f"Comparing left child at {child} ({arr[child]}) and right child at {child + 1} ({arr[child + 1]}).",
+                    )
+                    if arr[child + 1] > arr[child]:
+                        child += 1
+                comparisons += 1
+                add_event(
+                    "COMPARE",
+                    arr,
+                    comparing=[root, child],
+                    sorted_indices=sorted(sorted_set),
+                    explanation=f"Comparing heap parent at {root} ({arr[root]}) with maximum child at {child} ({arr[child]}).",
+                )
+                if arr[child] > arr[root]:
+                    arr[root], arr[child] = arr[child], arr[root]
+                    swaps += 1
+                    add_event(
+                        "HEAPIFY",
+                        arr,
+                        swapped=[root, child],
+                        sorted_indices=sorted(sorted_set),
+                        explanation=f"Sifted down: swapped parent {root} with child {child}.",
+                    )
+                    root = child
+                else:
+                    break
+
+        for start_i in range((n - 2) // 2, -1, -1):
+            _sift_down(start_i, n - 1)
+        add_event(
+            "HEAPIFY",
+            arr,
+            sorted_indices=sorted(sorted_set),
+            explanation="Max-heap property established across array.",
+        )
+
+        for end_i in range(n - 1, 0, -1):
+            arr[0], arr[end_i] = arr[end_i], arr[0]
+            swaps += 1
+            sorted_set.add(end_i)
+            add_event(
+                "SWAP",
+                arr,
+                swapped=[0, end_i],
+                sorted_indices=sorted(sorted_set),
+                explanation=f"Extracted max element {arr[end_i]} from root to index {end_i}.",
+            )
+            _sift_down(0, end_i - 1)
+
+        sorted_set.add(0)
+
+    add_event(
+        "COMPLETE",
+        arr,
+        sorted_indices=list(range(n)),
+        explanation=f"{canonical_name} completed in {step_num} steps with {comparisons} comparisons and {swaps} moves/writes.",
+    )
+
+    return {
+        "algorithm": canonical_name,
+        "original_array": list(items),
+        "final_array": list(arr),
+        "comparisons": comparisons,
+        "swaps": swaps,
+        "total_steps": len(events),
+        "events": events,
+        "theoretical_complexity": complexity,
+    }
+
+
+def record_search_trace(items: list[Any], value: Any, algorithm: str = "binary_search") -> dict:
+    """Records deterministic step-by-step trace events of searching algorithms."""
+    algo_key = algorithm.lower().replace("-", "_").replace(" ", "_")
+    arr = [float(x) if isinstance(x, (int, float)) else x for x in items]
+    target = float(value) if isinstance(value, (int, float)) else value
+    events: list[dict] = []
+    step_num = 0
+    comparisons = 0
+
+    def add_event(
+        event_type: str,
+        low: int = None,
+        high: int = None,
+        mid: int = None,
+        current_index: int = None,
+        found_index: int = None,
+        explanation: str = "",
+    ):
+        nonlocal step_num
+        step_num += 1
+        events.append({
+            "step": step_num,
+            "event_type": event_type,
+            "array": list(arr),
+            "low": low,
+            "high": high,
+            "mid": mid,
+            "current_index": current_index,
+            "found_index": found_index,
+            "target": target,
+            "comparisons": comparisons,
+            "explanation": explanation,
+        })
+
+    if algo_key in {"binary_search", "binary"}:
+        canonical_name = "Binary Search"
+        complexity = "O(log N)"
+        for i in range(len(arr) - 1):
+            if arr[i] > arr[i + 1]:
+                raise ValueError("Array must be sorted in non-decreasing order before executing Binary Search.")
+
+        add_event(
+            "INITIALIZE",
+            low=0,
+            high=max(0, len(arr) - 1),
+            explanation=f"Started Binary Search for target {target} across range [0..{max(0, len(arr) - 1)}].",
+        )
+        low, high = 0, len(arr) - 1
+        found_idx = -1
+        while low <= high:
+            mid = (low + high) // 2
+            comparisons += 1
+            mid_val = arr[mid]
+            add_event(
+                "INSPECT",
+                low=low,
+                high=high,
+                mid=mid,
+                explanation=f"Inspecting middle index {mid} with value {mid_val} against target {target}.",
+            )
+            if mid_val == target:
+                found_idx = mid
+                add_event(
+                    "FOUND",
+                    low=low,
+                    high=high,
+                    mid=mid,
+                    found_index=found_idx,
+                    explanation=f"Target {target} located at index {mid}!",
+                )
+                break
+            elif mid_val < target:
+                add_event(
+                    "NARROW",
+                    low=mid + 1,
+                    high=high,
+                    mid=mid,
+                    explanation=f"Target {target} > middle value {mid_val}. Narrowing search range to right subarray [{mid + 1}..{high}].",
+                )
+                low = mid + 1
+            else:
+                add_event(
+                    "NARROW",
+                    low=low,
+                    high=mid - 1,
+                    mid=mid,
+                    explanation=f"Target {target} < middle value {mid_val}. Narrowing search range to left subarray [{low}..{mid - 1}].",
+                )
+                high = mid - 1
+
+        if found_idx == -1:
+            add_event(
+                "NOT_FOUND",
+                low=low,
+                high=high,
+                found_index=-1,
+                explanation=f"Target {target} not found in array (search interval is empty).",
+            )
+
+        add_event(
+            "COMPLETE",
+            low=low,
+            high=high,
+            found_index=found_idx,
+            explanation=f"Binary Search complete. Target {'found at index ' + str(found_idx) if found_idx >= 0 else 'not present'}.",
+        )
+        return {
+            "algorithm": canonical_name,
+            "array": arr,
+            "target": target,
+            "found": found_idx >= 0,
+            "index": found_idx,
+            "comparisons": comparisons,
+            "total_steps": len(events),
+            "events": events,
+            "theoretical_complexity": complexity,
+        }
+
+    elif algo_key in {"linear_search", "linear"}:
+        canonical_name = "Linear Search"
+        complexity = "O(N)"
+        add_event(
+            "INITIALIZE",
+            explanation=f"Started Linear Search for target {target} across {len(arr)} elements.",
+        )
+        found_idx = -1
+        for idx, item in enumerate(arr):
+            comparisons += 1
+            add_event(
+                "INSPECT",
+                current_index=idx,
+                explanation=f"Inspecting index {idx} (value {item}) for target {target}.",
+            )
+            if item == target:
+                found_idx = idx
+                add_event(
+                    "FOUND",
+                    current_index=idx,
+                    found_index=idx,
+                    explanation=f"Target {target} found at index {idx} after {comparisons} comparison(s)!",
+                )
+                break
+
+        if found_idx == -1:
+            add_event(
+                "NOT_FOUND",
+                found_index=-1,
+                explanation=f"Target {target} not found after checking all {len(arr)} elements.",
+            )
+
+        add_event(
+            "COMPLETE",
+            found_index=found_idx,
+            explanation=f"Linear Search complete. Target {'found at index ' + str(found_idx) if found_idx >= 0 else 'not present'}.",
+        )
+        return {
+            "algorithm": canonical_name,
+            "array": arr,
+            "target": target,
+            "found": found_idx >= 0,
+            "index": found_idx,
+            "comparisons": comparisons,
+            "total_steps": len(events),
+            "events": events,
+            "theoretical_complexity": complexity,
+        }
+    else:
+        raise ValueError(f"Unsupported search algorithm '{algorithm}'. Must be binary_search or linear_search.")
+
+
+def record_prim_trace(nodes: Iterable[Any], edges: Iterable[dict], criterion: str = "cost") -> dict:
+    """Records deterministic step-by-step trace events of Prim's algorithm."""
+    node_list, _, adjacency = build_graph(nodes, edges, False)
+    if criterion not in CRITERIA:
+        raise ValueError("Invalid MST criterion.")
+    events = []
+    step_num = 0
+    selected_edges = []
+    total_cost = 0.0
+    visited = set()
+    counter = 0
+
+    step_num += 1
+    events.append({
+        "step": step_num,
+        "event_type": "INITIALIZE",
+        "current_vertex": node_list[0] if node_list else None,
+        "visited_nodes": list(visited),
+        "selected_edges": [],
+        "total_cost": 0.0,
+        "explanation": f"Initialized Prim's algorithm on graph with {len(node_list)} vertices.",
+    })
+
+    for root in node_list:
+        if root in visited:
+            continue
+        visited.add(root)
+        step_num += 1
+        events.append({
+            "step": step_num,
+            "event_type": "VISIT_ROOT",
+            "current_vertex": root,
+            "visited_nodes": sorted(visited),
+            "selected_edges": list(selected_edges),
+            "total_cost": total_cost,
+            "explanation": f"Started component spanning from root vertex '{root}'.",
+        })
+        heap: list[tuple[float, int, str, str, Edge]] = []
+        for neighbour, edge in adjacency[root]:
+            counter += 1
+            heappush(heap, (edge.weights[criterion], counter, root, neighbour, edge))
+
+        while heap:
+            weight, _, src, tgt, edge = heappop(heap)
+            step_num += 1
+            if tgt in visited:
+                events.append({
+                    "step": step_num,
+                    "event_type": "REJECT_EDGE",
+                    "edge": {"source": src, "target": tgt, "weight": weight},
+                    "current_vertex": tgt,
+                    "visited_nodes": sorted(visited),
+                    "selected_edges": list(selected_edges),
+                    "total_cost": total_cost,
+                    "explanation": f"Rejected edge ({src} — {tgt}, wt {weight}): target vertex '{tgt}' already visited (would form cycle).",
+                })
+                continue
+
+            visited.add(tgt)
+            selected_edges.append({"source": src, "target": tgt, "weight": weight})
+            total_cost += weight
+            events.append({
+                "step": step_num,
+                "event_type": "ACCEPT_EDGE",
+                "edge": {"source": src, "target": tgt, "weight": weight},
+                "current_vertex": tgt,
+                "visited_nodes": sorted(visited),
+                "selected_edges": list(selected_edges),
+                "total_cost": total_cost,
+                "explanation": f"Accepted minimum candidate edge ({src} — {tgt}, wt {weight}) connecting '{tgt}' into tree.",
+            })
+
+            for nxt, next_edge in adjacency[tgt]:
+                if nxt not in visited:
+                    counter += 1
+                    heappush(heap, (next_edge.weights[criterion], counter, tgt, nxt, next_edge))
+
+    components = _components(node_list, adjacency)
+    is_forest = len(components) > 1
+
+    step_num += 1
+    events.append({
+        "step": step_num,
+        "event_type": "COMPLETE",
+        "current_vertex": None,
+        "visited_nodes": sorted(visited),
+        "selected_edges": list(selected_edges),
+        "total_cost": total_cost,
+        "is_forest": is_forest,
+        "explanation": f"Prim's algorithm finished. {'Minimum Spanning Forest' if is_forest else 'Minimum Spanning Tree'} total weight: {total_cost:.1f} across {len(selected_edges)} edges.",
+    })
+
+    return {
+        "algorithm": "Prim",
+        "criterion": criterion,
+        "nodes": node_list,
+        "events": events,
+        "total_steps": len(events),
+        "selected_edges": selected_edges,
+        "total_cost": total_cost,
+        "is_forest": is_forest,
+        "connected_components": components,
+    }
+
+
+def record_bfs_trace(
+    nodes: Iterable[Any], edges: Iterable[dict], start: Any, target: Any | None = None, directed: bool = False
+) -> dict:
+    """Records deterministic step-by-step trace events of Breadth-First Search (BFS)."""
+    node_list, _, adjacency = build_graph(nodes, edges, directed)
+    start_s = _node(start)
+    target_s = _node(target) if target is not None else None
+    if start_s not in adjacency or (target_s is not None and target_s not in adjacency):
+        raise ValueError("Start and target must be graph vertices.")
+
+    events = []
+    step_num = 0
+    queue = [start_s]
+    visited = {start_s}
+    predecessor = {start_s: None}
+    traversal_order = []
+
+    step_num += 1
+    events.append({
+        "step": step_num,
+        "event_type": "INITIALIZE",
+        "current_vertex": start_s,
+        "queue": list(queue),
+        "visited_nodes": sorted(visited),
+        "explanation": f"Initialized BFS from start vertex '{start_s}'.",
+    })
+
+    reached = False
+    while queue:
+        curr = queue.pop(0)
+        traversal_order.append(curr)
+        step_num += 1
+        events.append({
+            "step": step_num,
+            "event_type": "VISIT_NODE",
+            "current_vertex": curr,
+            "queue": list(queue),
+            "visited_nodes": sorted(visited),
+            "traversal_order": list(traversal_order),
+            "explanation": f"Dequeued and visited vertex '{curr}'.",
+        })
+
+        if target_s and curr == target_s:
+            reached = True
+            break
+
+        for neighbour, edge in adjacency[curr]:
+            w = edge.weights.get("distance", edge.weights.get("cost", 1.0))
+            step_num += 1
+            if neighbour not in visited:
+                visited.add(neighbour)
+                predecessor[neighbour] = curr
+                queue.append(neighbour)
+                events.append({
+                    "step": step_num,
+                    "event_type": "ENQUEUE",
+                    "current_vertex": curr,
+                    "edge": {"source": curr, "target": neighbour, "weight": w},
+                    "queue": list(queue),
+                    "visited_nodes": sorted(visited),
+                    "traversal_order": list(traversal_order),
+                    "explanation": f"Discovered unvisited neighbor '{neighbour}' via edge ({curr} -> {neighbour}). Added to queue.",
+                })
+            else:
+                events.append({
+                    "step": step_num,
+                    "event_type": "EXAMINE_EDGE",
+                    "current_vertex": curr,
+                    "edge": {"source": curr, "target": neighbour, "weight": w},
+                    "queue": list(queue),
+                    "visited_nodes": sorted(visited),
+                    "traversal_order": list(traversal_order),
+                    "explanation": f"Examined edge ({curr} -> {neighbour}): vertex '{neighbour}' already visited.",
+                })
+
+    path = _reconstruct(predecessor, target_s) if (target_s and target_s in predecessor) else []
+    step_num += 1
+    events.append({
+        "step": step_num,
+        "event_type": "COMPLETE",
+        "current_vertex": None,
+        "queue": list(queue),
+        "visited_nodes": sorted(visited),
+        "traversal_order": list(traversal_order),
+        "final_path": path,
+        "explanation": f"BFS traversal complete. Visited {len(traversal_order)} vertices in order: {', '.join(traversal_order)}.",
+    })
+
+    return {
+        "algorithm": "BFS",
+        "start": start_s,
+        "target": target_s,
+        "nodes": node_list,
+        "events": events,
+        "total_steps": len(events),
+        "traversal_order": traversal_order,
+        "visited_nodes": sorted(visited),
+        "path": path,
+        "reachable": target_s in visited if target_s else True,
+    }
+
+
+def record_dfs_trace(
+    nodes: Iterable[Any], edges: Iterable[dict], start: Any, directed: bool = False
+) -> dict:
+    """Records deterministic step-by-step trace events of Depth-First Search (DFS)."""
+    node_list, _, adjacency = build_graph(nodes, edges, directed)
+    start_s = _node(start)
+    if start_s not in adjacency:
+        raise ValueError("Start must be a graph vertex.")
+
+    events = []
+    step_num = 0
+    stack = [start_s]
+    visited = set()
+    traversal_order = []
+
+    step_num += 1
+    events.append({
+        "step": step_num,
+        "event_type": "INITIALIZE",
+        "current_vertex": start_s,
+        "stack": list(stack),
+        "visited_nodes": sorted(visited),
+        "explanation": f"Initialized DFS with start vertex '{start_s}' on stack.",
+    })
+
+    while stack:
+        curr = stack.pop()
+        if curr in visited:
+            continue
+        visited.add(curr)
+        traversal_order.append(curr)
+        step_num += 1
+        events.append({
+            "step": step_num,
+            "event_type": "VISIT_NODE",
+            "current_vertex": curr,
+            "stack": list(stack),
+            "visited_nodes": sorted(visited),
+            "traversal_order": list(traversal_order),
+            "explanation": f"Popped from stack and visited vertex '{curr}'.",
+        })
+
+        neighbours = adjacency[curr]
+        for neighbour, edge in reversed(neighbours):
+            w = edge.weights.get("distance", edge.weights.get("cost", 1.0))
+            if neighbour not in visited:
+                stack.append(neighbour)
+                step_num += 1
+                events.append({
+                    "step": step_num,
+                    "event_type": "PUSH_STACK",
+                    "current_vertex": curr,
+                    "edge": {"source": curr, "target": neighbour, "weight": w},
+                    "stack": list(stack),
+                    "visited_nodes": sorted(visited),
+                    "traversal_order": list(traversal_order),
+                    "explanation": f"Pushed unvisited neighbor '{neighbour}' onto DFS stack.",
+                })
+
+    components = _components(node_list, adjacency)
+    step_num += 1
+    events.append({
+        "step": step_num,
+        "event_type": "COMPLETE",
+        "current_vertex": None,
+        "stack": [],
+        "visited_nodes": sorted(visited),
+        "traversal_order": list(traversal_order),
+        "connected_components": components,
+        "explanation": f"DFS traversal complete. Visited {len(traversal_order)} vertices in order: {', '.join(traversal_order)}.",
+    })
+
+    return {
+        "algorithm": "DFS",
+        "start": start_s,
+        "nodes": node_list,
+        "events": events,
+        "total_steps": len(events),
+        "traversal_order": traversal_order,
+        "visited_nodes": sorted(visited),
+        "connected_components": components,
+    }
+
 

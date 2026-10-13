@@ -20,8 +20,17 @@ from algorithm_engine import (
     optimize_projects,
     prim,
     quick_sort,
+    bubble_sort,
+    selection_sort,
+    insertion_sort,
+    linear_search,
     record_dijkstra_trace,
     record_kruskal_trace,
+    record_prim_trace,
+    record_bfs_trace,
+    record_dfs_trace,
+    record_sort_trace,
+    record_search_trace,
     synthetic_graph,
 )
 
@@ -259,6 +268,113 @@ class AlgorithmEngineTests(unittest.TestCase):
         self.assertEqual(first_event["event_type"], "INITIALIZE")
         last_event = trace["events"][-1]
         self.assertEqual(last_event["event_type"], "COMPLETE")
+
+    def test_all_sorting_algorithms_correctness(self):
+        raw = [42, -5, 0, 17, 3, -5, 99, 1]
+        expected = sorted(raw)
+        for name, fn in [
+            ("bubble", bubble_sort),
+            ("selection", selection_sort),
+            ("insertion", insertion_sort),
+            ("merge", merge_sort),
+            ("quick", quick_sort),
+            ("heap", heap_sort),
+        ]:
+            self.assertEqual(fn(raw), expected, f"Failed on {name}")
+
+    def test_record_sort_trace_all_algorithms(self):
+        raw = [25, 10, -5, 30, 0]
+        expected = [-5, 0, 10, 25, 30]
+        algos = ["bubble_sort", "selection_sort", "insertion_sort", "merge_sort", "quick_sort", "heap_sort"]
+        for algo in algos:
+            res = record_sort_trace(raw, algo)
+            self.assertEqual(res["final_array"], expected, f"Sorting mismatch for {algo}")
+            self.assertGreater(res["total_steps"], 1)
+            self.assertGreater(res["comparisons"], 0)
+            self.assertEqual(res["events"][0]["event_type"], "INITIALIZE")
+            self.assertEqual(res["events"][-1]["event_type"], "COMPLETE")
+            self.assertEqual(res["events"][-1]["array"], expected)
+
+    def test_record_sort_trace_edge_cases(self):
+        # Empty array
+        res_empty = record_sort_trace([], "quick_sort")
+        self.assertEqual(res_empty["final_array"], [])
+        self.assertEqual(res_empty["total_steps"], 2)
+
+        # Single element
+        res_single = record_sort_trace([7], "merge_sort")
+        self.assertEqual(res_single["final_array"], [7])
+
+        # Already sorted and reverse sorted
+        res_sorted = record_sort_trace([1, 2, 3, 4], "bubble_sort")
+        self.assertEqual(res_sorted["final_array"], [1, 2, 3, 4])
+        res_rev = record_sort_trace([4, 3, 2, 1], "selection_sort")
+        self.assertEqual(res_rev["final_array"], [1, 2, 3, 4])
+
+    def test_record_search_trace_binary(self):
+        arr = [10, 20, 30, 40, 50, 60, 70]
+        # Target present
+        found_trace = record_search_trace(arr, 30, "binary_search")
+        self.assertTrue(found_trace["found"])
+        self.assertEqual(found_trace["index"], 2)
+        self.assertGreater(found_trace["comparisons"], 0)
+        self.assertEqual(found_trace["events"][-1]["event_type"], "COMPLETE")
+
+        # Target absent
+        missing_trace = record_search_trace(arr, 35, "binary_search")
+        self.assertFalse(missing_trace["found"])
+        self.assertEqual(missing_trace["index"], -1)
+
+        # Unsorted array must raise ValueError
+        with self.assertRaises(ValueError):
+            record_search_trace([50, 10, 30], 10, "binary_search")
+
+    def test_record_search_trace_linear(self):
+        arr = [45, 12, 89, -3, 23, 7]
+        trace = record_search_trace(arr, -3, "linear_search")
+        self.assertTrue(trace["found"])
+        self.assertEqual(trace["index"], 3)
+        self.assertEqual(trace["comparisons"], 4)
+
+        trace_absent = record_search_trace(arr, 999, "linear_search")
+        self.assertFalse(trace_absent["found"])
+        self.assertEqual(trace_absent["index"], -1)
+
+    def test_linear_search_primitive(self):
+        self.assertEqual(linear_search([5, 8, 2], None, 8), 1)
+        self.assertEqual(linear_search([5, 8, 2], None, 99), -1)
+
+    def test_record_prim_trace(self):
+        trace = record_prim_trace(NODES, EDGES, "cost")
+        self.assertEqual(trace["algorithm"], "Prim")
+        self.assertEqual(trace["total_cost"], 4.0)
+        self.assertEqual(len(trace["selected_edges"]), 3)
+        self.assertFalse(trace["is_forest"])
+        self.assertGreater(trace["total_steps"], 4)
+        self.assertEqual(trace["events"][0]["event_type"], "INITIALIZE")
+        self.assertEqual(trace["events"][-1]["event_type"], "COMPLETE")
+
+        # Disconnected graph produces spanning forest
+        disc_edges = [{"source": "A", "target": "B", "cost": 1}, {"source": "C", "target": "D", "cost": 2}]
+        disc_trace = record_prim_trace(NODES, disc_edges, "cost")
+        self.assertTrue(disc_trace["is_forest"])
+        self.assertEqual(disc_trace["total_cost"], 3.0)
+
+    def test_record_bfs_trace(self):
+        trace = record_bfs_trace(NODES, EDGES, "A", "D")
+        self.assertEqual(trace["algorithm"], "BFS")
+        self.assertTrue(trace["reachable"])
+        self.assertEqual(trace["path"], ["A", "B", "D"])
+        self.assertIn("A", trace["traversal_order"])
+        self.assertEqual(trace["events"][0]["event_type"], "INITIALIZE")
+        self.assertEqual(trace["events"][-1]["event_type"], "COMPLETE")
+
+    def test_record_dfs_trace(self):
+        trace = record_dfs_trace(NODES, EDGES, "A")
+        self.assertEqual(trace["algorithm"], "DFS")
+        self.assertEqual(len(trace["traversal_order"]), 4)
+        self.assertEqual(trace["events"][0]["event_type"], "INITIALIZE")
+        self.assertEqual(trace["events"][-1]["event_type"], "COMPLETE")
 
 
 if __name__ == "__main__":
